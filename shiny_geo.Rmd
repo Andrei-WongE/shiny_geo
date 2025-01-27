@@ -13,15 +13,21 @@ knitr::opts_chunk$set(echo = TRUE)
 # install.packages("dplyr")
 # install.packages("ggplot2")
 # install.packages("here")
+# install.packages("tidyr")
+# install.packages("ggrepel")
+# install.packages("wesanderson")
 
 library(shiny)
 library(dplyr)
 library(ggplot2)
 library(here)
+library(tidyr)
+library(ggrepel)
+library(wesanderson)
 
 # Loading data
-oe_data   <- load(here("Data", "shiny_data.RData"))
-ucdb_data <- load(here("Data", "built_ucdb.RData"))
+load(here("Data", "shiny_data.RData"))
+load(here("Data", "built_ucdb.RData"))
 
 ```
 
@@ -30,18 +36,26 @@ ucdb_data <- load(here("Data", "built_ucdb.RData"))
 
 
 ```{r ui}
+
 ui <- fluidPage(
   titlePanel("OE Data Shiny Web App"),
   sidebarLayout(
     sidebarPanel(
       selectInput("year", "Select Year:", choices = unique(oe_data_shi$Year)),
       selectInput("location", "Select City:", choices = unique(oe_data_shi$Location)),
-      selectInput("region2", "Select Comparison Group:", choices = unique(oe_data_shi$Region2)),
-      radioButtons("section", "Select Section:", choices = c("GDP per capita (PPP)", "Employment structure"))
+      selectInput("region2", "Select Comparison Group:", choices = unique(oe_data_shi$Region2), selected = "MENA"),
+      radioButtons("section", "Select:", choices = c("GDP per capita (PPP)", "Employment structure"))
     ),
     mainPanel(
-      plotOutput("gdpPlot"),
-      tableOutput("dataTable")
+      fluidRow(
+        column(12, plotOutput("plotOutput"))
+      ),
+      fluidRow(
+        column(12, plotOutput("employmentPlot"))
+      ),
+      fluidRow(
+        column(12, tableOutput("dataTable"))
+      )
     )
   )
 )
@@ -56,44 +70,95 @@ ui <- fluidPage(
 
 server <- function(input, output) {
   filteredData <- reactive({
+    req(input$year, input$location)
     oe_data_shi %>%
       filter(Year == input$year & Location == input$location)
   })
   
   comparisonGroupData <- reactive({
+    req(input$region2)
     oe_data_shi %>%
-      filter(Region2 == input$region2)
+      filter(Region2 == input$region2 & Location != input$location)
   })
   
   output$dataTable <- renderTable({
-    filteredData()
+    if (input$section == "GDP per capita (PPP)") {
+      filteredData() %>%
+        select(-Public_Services_Emp_Pct, -Industry_Emp_Pct, -Financial_Busines_Serices_Emp_Pct, 
+               -Consumer_services_Emp_Pct, -Agriculture_Emp_Pct, -Transport_Information_Communic_Services_Emp_Pct)
+      
+    } else if (input$section == "Employment structure") {
+      filteredData() %>%
+        select(-GDP_per_capita_PPP)
+    }
   })
   
-  output$gdpPlot <- renderPlot({
+  output$plotOutput <- renderPlot({
     if (input$section == "GDP per capita (PPP)") {
-      data <- oe_data_shi %>%
-        filter(Location == input$location | Region2 == input$region2)
-      
-      ggplot(data, aes(x = Year, y = GDP_per_capita_PPP, color = Location)) +
-        geom_line() +
-        geom_point() +
-        labs(title = "GDP per Capita PPP over Years", x = "Year", y = "GDP per Capita PPP") +
+      ggplot() +
+        # Background lines for comparison cities
+        geom_line(data = comparisonGroupData(), 
+                  aes(x = Year, y = GDP_per_capita_PPP, group = Location), 
+                  color = "gray80", 
+                  alpha = 0.6) +
+        
+        # Highlighted line for selected city
+        geom_line(data = filteredData(), 
+                  aes(x = Year, y = GDP_per_capita_PPP), 
+                  color = "red", 
+                  size = 1.2) +
+        
+        # Labels for comparison cities at the end
+        geom_text_repel(data = comparisonGroupData() %>% filter(Year == max(oe_data_shi$Year)),
+                        aes(x = Year, y = GDP_per_capita_PPP, label = Location),
+                        color = "gray40",
+                        size = 3,
+                        direction = "y",
+                        hjust = -0.2,
+                        segment.size = 0.3,
+                        max.overlaps = 20) +
+                       
+        # Label for selected city at the end
+        geom_text_repel(data = filteredData() %>% filter(Year == max(oe_data_shi$Year)),
+                        aes(x = Year, y = GDP_per_capita_PPP, label = Location),
+                        color = "red",
+                        size = 4,
+                        fontface = "bold",
+                        direction = "y",
+                        hjust = -0.2,
+                        segment.size = 0.5) +
+                       
+        labs(title = "GDP per Capita PPP over Years",
+             x = "Year", 
+             y = "GDP per Capita PPP") +
         theme_minimal() +
-        scale_color_manual(values = c("gray" = "gray", input$location = "blue"))
-    } else if (input$section == "Employment structure") {
-      data <- filteredData()
+        theme(legend.position = "none")
       
-      ggplot(data, aes(x = "", y = 100)) +
-        geom_bar(aes(y = Public_Services_Emp_Pct, fill = "Public Services"), stat = "identity") +
-        geom_bar(aes(y = Industry_Emp_Pct, fill = "Industry"), stat = "identity") +
-        geom_bar(aes(y = Financial_Busines_Serices_Emp_Pct, fill = "Financial & Business Services"), stat = "identity") +
-        geom_bar(aes(y = Consumer_services_Emp_Pct, fill = "Consumer Services"), stat = "identity") +
-        geom_bar(aes(y = Agriculture_Emp_Pct, fill = "Agriculture"), stat = "identity") +
-        geom_bar(aes(y = Transport_Information_Communic_Services_Emp_Pct, fill = "Transport & Info/Comm Services"), stat = "identity") +
-        labs(title = "Employment Structure", x = "Category", y = "Percentage") +
-        coord_flip() +
+    }
+  })
+  
+  output$employmentPlot <- renderPlot({
+    if (input$section == "Employment structure") {
+      columns_to_pivot_Emp_Pct <- c("Public_Services_Emp_Pct",
+                      "Industry_Emp_Pct",
+                      "Financial_Busines_Serices_Emp_Pct",
+                      "Consumer_services_Emp_Pct",
+                      "Agriculture_Emp_Pct",
+                      "Transport_Information_Communic_Services_Emp_Pct")
+
+      pie_data3 <- filteredData() %>%
+        pivot_longer(cols = all_of(columns_to_pivot_Emp_Pct), names_to = "Employment_sector", values_to = "Percentage")
+
+      ggplot(pie_data3, aes(x = Location, y = Percentage, fill = Employment_sector)) +
+        geom_bar(stat = "identity", position = "fill") +
+        scale_fill_manual(values = wes_palette("Zissou1", n = length(unique(pie_data3$Employment_sector)), type = "continuous")) + # Using a continuous palette for colors
+        labs(title = "Employment Sector Percentage by Selected Categories",
+             x = "Location",
+             y = "Percentage") +
         theme_minimal() +
-        scale_fill_manual(values = c("Public Services" = "red", "Industry" = "blue", "Financial & Business Services" = "green", "Consumer Services" = "purple", "Agriculture" = "orange", "Transport & Info/Comm Services" = "brown"))
+        scale_y_continuous(labels = scales::percent_format()) +
+        geom_text(aes(label = scales::percent(Percentage, accuracy = 0.1)),
+                  position = position_fill(vjust = 0.5), size = 2)
     }
   })
 }
