@@ -16,6 +16,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # install.packages("tidyr")
 # install.packages("ggrepel")
 # install.packages("wesanderson")
+# install.packages("DT")
 
 library(shiny)
 library(dplyr)
@@ -24,6 +25,7 @@ library(here)
 library(tidyr)
 library(ggrepel)
 library(wesanderson)
+library(DT)
 
 # Loading data
 load(here("Data", "shiny_data.RData"))
@@ -38,29 +40,34 @@ load(here("Data", "built_ucdb.RData"))
 ```{r ui}
 
 ui <- fluidPage(
-  titlePanel("OE Data Shiny Web App"),
+  tags$head(
+    tags$style(HTML("
+      .container-fluid{padding:0}
+      .row{margin:0}
+      .col-sm-12{padding:0}
+      .dataTables_wrapper{margin-top:5px}
+      .well{padding:5px; margin:0}
+      .form-group{margin-bottom:5px}
+      .radio{margin:2px}
+      #dynamicPlot{height:400px}
+      .dataTables_filter{margin-bottom:5px}
+      .dataTables_length{margin-bottom:5px}
+    "))
+  ),
+  titlePanel(div("OE Data Shiny Web App", style="margin:0; padding:5px")),
   sidebarLayout(
-    sidebarPanel(
+    sidebarPanel(width=2,
       selectInput("year", "Select Year:", choices = unique(oe_data_shi$Year)),
       selectInput("location", "Select City:", choices = unique(oe_data_shi$Location)),
       selectInput("region2", "Select Comparison Group:", choices = unique(oe_data_shi$Region2), selected = "MENA"),
       radioButtons("section", "Select:", choices = c("GDP per capita (PPP)", "Employment structure"))
     ),
-    mainPanel(
-      fluidRow(
-        column(12, plotOutput("plotOutput"))
-      ),
-      fluidRow(
-        column(12, plotOutput("employmentPlot"))
-      ),
-      fluidRow(
-        column(12, tableOutput("dataTable"))
-      )
+    mainPanel(width=10,
+      uiOutput("dynamicPlot"),
+      DT::dataTableOutput("dataTable")
     )
   )
 )
-
-
 ```
 
 ## Server
@@ -69,7 +76,22 @@ ui <- fluidPage(
 ```{r sever, echo=FALSE}
 
 server <- function(input, output) {
+  
+  output$dynamicPlot <- renderUI({
+    if(input$section == "GDP per capita (PPP)") {
+      plotOutput("plotOutput")
+    } else {
+      plotOutput("employmentPlot")
+    }
+  })
+    
   filteredData <- reactive({
+    req(input$location)
+    oe_data_shi %>%
+      filter(Location == input$location)
+  })
+  
+  filteredDataByYear <- reactive({
     req(input$year, input$location)
     oe_data_shi %>%
       filter(Year == input$year & Location == input$location)
@@ -81,15 +103,26 @@ server <- function(input, output) {
       filter(Region2 == input$region2 & Location != input$location)
   })
   
-  output$dataTable <- renderTable({
+  comparisonGroupDataByYear <- reactive({
+    req(input$year, input$region2)
+    oe_data_shi %>%
+      filter(Year == input$year & Region2 == input$region2 & Location != input$location)
+  })
+  
+  output$dataTable <- DT::renderDataTable({
     if (input$section == "GDP per capita (PPP)") {
-      filteredData() %>%
-        select(-Public_Services_Emp_Pct, -Industry_Emp_Pct, -Financial_Busines_Serices_Emp_Pct, 
-               -Consumer_services_Emp_Pct, -Agriculture_Emp_Pct, -Transport_Information_Communic_Services_Emp_Pct)
+      data <- filteredDataByYear() %>%
+        select(-ends_with("Emp_Pct"))
+      comparison_data <- comparisonGroupDataByYear() %>%
+        select(-ends_with("Emp_Pct"))
+      datatable(bind_rows(data, comparison_data))
       
     } else if (input$section == "Employment structure") {
-      filteredData() %>%
-        select(-GDP_per_capita_PPP)
+      data <- filteredDataByYear() %>%
+        select(-ends_with("Emp_Pct"))
+      comparison_data <- comparisonGroupDataByYear() %>%
+        select(-ends_with("Emp_Pct"))
+      datatable(bind_rows(data, comparison_data))
     }
   })
   
@@ -104,7 +137,7 @@ server <- function(input, output) {
         
         # Highlighted line for selected city
         geom_line(data = filteredData(), 
-                  aes(x = Year, y = GDP_per_capita_PPP), 
+                  aes(x = Year, y = GDP_per_capita_PPP, group = Location), 
                   color = "red", 
                   size = 1.2) +
         
@@ -116,7 +149,8 @@ server <- function(input, output) {
                         direction = "y",
                         hjust = -0.2,
                         segment.size = 0.3,
-                        max.overlaps = 20) +
+                        force = 0.5,
+                        max.overlaps = 50) + # Adjust max.overlaps
                        
         # Label for selected city at the end
         geom_text_repel(data = filteredData() %>% filter(Year == max(oe_data_shi$Year)),
@@ -126,14 +160,15 @@ server <- function(input, output) {
                         fontface = "bold",
                         direction = "y",
                         hjust = -0.2,
-                        segment.size = 0.5) +
+                        segment.size = 0.5,
+                        force = 0.5,
+                        max.overlaps = 50) + # Adjust max.overlaps
                        
         labs(title = "GDP per Capita PPP over Years",
              x = "Year", 
              y = "GDP per Capita PPP") +
         theme_minimal() +
         theme(legend.position = "none")
-      
     }
   })
   
@@ -146,8 +181,9 @@ server <- function(input, output) {
                       "Agriculture_Emp_Pct",
                       "Transport_Information_Communic_Services_Emp_Pct")
 
-      pie_data3 <- filteredData() %>%
-        pivot_longer(cols = all_of(columns_to_pivot_Emp_Pct), names_to = "Employment_sector", values_to = "Percentage")
+      pie_data3 <- filteredDataByYear() %>%
+        pivot_longer(cols = all_of(columns_to_pivot_Emp_Pct), names_to = "Employment_sector", values_to = "Percentage") %>%
+        mutate(Employment_sector = gsub("(_Emp_Pct|_)", " ", Employment_sector))
 
       ggplot(pie_data3, aes(x = Location, y = Percentage, fill = Employment_sector)) +
         geom_bar(stat = "identity", position = "fill") +
@@ -158,11 +194,10 @@ server <- function(input, output) {
         theme_minimal() +
         scale_y_continuous(labels = scales::percent_format()) +
         geom_text(aes(label = scales::percent(Percentage, accuracy = 0.1)),
-                  position = position_fill(vjust = 0.5), size = 2)
+                  position = position_fill(vjust = 0.5), size = 4)
     }
   })
 }
-
 ```
 
 ```{r deploy}
