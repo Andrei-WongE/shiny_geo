@@ -1,0 +1,108 @@
+---
+title: "shiny_geo"
+author: "Andrei Wong Espejo"
+date: "2025-01-27"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# install.packages("shiny")
+# install.packages("dplyr")
+# install.packages("ggplot2")
+# install.packages("here")
+
+library(shiny)
+library(dplyr)
+library(ggplot2)
+library(here)
+
+# Loading data
+oe_data   <- load(here("Data", "shiny_data.RData"))
+ucdb_data <- load(here("Data", "built_ucdb.RData"))
+
+```
+
+## UI
+
+
+
+```{r ui}
+ui <- fluidPage(
+  titlePanel("OE Data Shiny Web App"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("year", "Select Year:", choices = unique(oe_data_shi$Year)),
+      selectInput("location", "Select City:", choices = unique(oe_data_shi$Location)),
+      selectInput("region2", "Select Comparison Group:", choices = unique(oe_data_shi$Region2)),
+      radioButtons("section", "Select Section:", choices = c("GDP per capita (PPP)", "Employment structure"))
+    ),
+    mainPanel(
+      plotOutput("gdpPlot"),
+      tableOutput("dataTable")
+    )
+  )
+)
+
+
+```
+
+## Server
+
+
+```{r sever, echo=FALSE}
+
+server <- function(input, output) {
+  filteredData <- reactive({
+    oe_data_shi %>%
+      filter(Year == input$year & Location == input$location)
+  })
+  
+  comparisonGroupData <- reactive({
+    oe_data_shi %>%
+      filter(Region2 == input$region2)
+  })
+  
+  output$dataTable <- renderTable({
+    filteredData()
+  })
+  
+  output$gdpPlot <- renderPlot({
+    if (input$section == "GDP per capita (PPP)") {
+      data <- oe_data_shi %>%
+        filter(Location == input$location | Region2 == input$region2)
+      
+      ggplot(data, aes(x = Year, y = GDP_per_capita_PPP, color = Location)) +
+        geom_line() +
+        geom_point() +
+        labs(title = "GDP per Capita PPP over Years", x = "Year", y = "GDP per Capita PPP") +
+        theme_minimal() +
+        scale_color_manual(values = c("gray" = "gray", input$location = "blue"))
+    } else if (input$section == "Employment structure") {
+      data <- filteredData()
+      
+      ggplot(data, aes(x = "", y = 100)) +
+        geom_bar(aes(y = Public_Services_Emp_Pct, fill = "Public Services"), stat = "identity") +
+        geom_bar(aes(y = Industry_Emp_Pct, fill = "Industry"), stat = "identity") +
+        geom_bar(aes(y = Financial_Busines_Serices_Emp_Pct, fill = "Financial & Business Services"), stat = "identity") +
+        geom_bar(aes(y = Consumer_services_Emp_Pct, fill = "Consumer Services"), stat = "identity") +
+        geom_bar(aes(y = Agriculture_Emp_Pct, fill = "Agriculture"), stat = "identity") +
+        geom_bar(aes(y = Transport_Information_Communic_Services_Emp_Pct, fill = "Transport & Info/Comm Services"), stat = "identity") +
+        labs(title = "Employment Structure", x = "Category", y = "Percentage") +
+        coord_flip() +
+        theme_minimal() +
+        scale_fill_manual(values = c("Public Services" = "red", "Industry" = "blue", "Financial & Business Services" = "green", "Consumer Services" = "purple", "Agriculture" = "orange", "Transport & Info/Comm Services" = "brown"))
+    }
+  })
+}
+
+```
+
+```{r deploy}
+
+shinyApp(ui = ui, server = server)
+
+```
+

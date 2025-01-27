@@ -1,0 +1,1 @@
+# See cities_db project shiny_data.R for the data cleaning process
