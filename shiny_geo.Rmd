@@ -36,7 +36,6 @@ library(rsconnect)
 # Loading data
 load(here("Data", "shiny_data.RData"))
 load(here("Data", "built_ucdb.RData"))
-
 ```
 
 ## UI
@@ -44,7 +43,6 @@ load(here("Data", "built_ucdb.RData"))
 
 
 ```{r ui}
-
 ui <- dashboardPage(
   dashboardHeader(title = "Urban Definitions Data Shiny Web App"),
   dashboardSidebar(
@@ -56,28 +54,34 @@ ui <- dashboardPage(
   ),
   dashboardBody(
     tabItems(
-      tabItem(tabName = "eUFA",
+      tabItem(
+        tabName = "eUFA",
         sidebarLayout(
-          sidebarPanel(width = 2,
+          sidebarPanel(
+            width = 2,
             selectInput("year", "Select Year:", choices = unique(oe_data_shi$Year)),
             selectInput("location", "Select City:", choices = unique(oe_data_shi$Location)),
             selectInput("comparators", "Select Comparison Group:", choices = unique(oe_data_shi$Comparators), selected = "MENA"),
             radioButtons("section", "Select:", choices = c("GDP per capita (PPP)", "Employment structure"))
           ),
-          mainPanel(width = 10,
+          mainPanel(
+            width = 10,
             uiOutput("dynamicPlot"),
             DT::dataTableOutput("dataTable")
           )
         )
       ),
-      tabItem(tabName = "UrbanCentres",
+      tabItem(
+        tabName = "UrbanCentres",
         sidebarLayout(
-          sidebarPanel(width = 2,
+          sidebarPanel(
+            width = 2,
             h4("Select options below:"),
             selectInput("urbanCentre", "Select City:", choices = c("", unique(built_ucdb$Urban_centre))),
             selectInput("comparators", "Select Comparison Group:", choices = unique(oe_data_shi$Comparators), selected = "MENA")
           ),
-          mainPanel(width = 10,
+          mainPanel(
+            width = 10,
             uiOutput("urbanOutput"),
             DT::dataTableOutput("urbanDataTable")
           )
@@ -86,17 +90,13 @@ ui <- dashboardPage(
     )
   )
 )
-
-
 ```
 
 ## Server
 
 
 ```{r sever, echo=FALSE}
-
 server <- function(input, output, session) {
-  
   # Dynamic Plot UI
   output$dynamicPlot <- renderUI({
     if (input$sidebarMenu == "eUFA") {
@@ -107,303 +107,344 @@ server <- function(input, output, session) {
       }
     }
   })
-  
+
+  urbanDatacomparators <- reactive({
+    req(input$comparators)
+    built_ucdb %>%
+      filter(Comparators == input$comparators & !is.na(Built_rel_change))
+  })
+
   # Data Filters for eUFA
   filteredData_eUFA <- reactive({
     req(input$location)
     oe_data_shi %>%
       filter(Location == input$location)
   })
-  
+
   filteredDataByYear_eUFA <- reactive({
     req(input$year, input$location)
     oe_data_shi %>%
       filter(Year == input$year & Location == input$location)
   })
-  
+
   comparisonGroupData_eUFA <- reactive({
     req(input$comparators)
     oe_data_shi %>%
       filter(Comparators == input$comparators & Location != input$location)
   })
-  
+
   comparisonGroupDataByYear_eUFA <- reactive({
     req(input$year, input$comparators)
     oe_data_shi %>%
       filter(Year == input$year & Comparators == input$comparators & Location != input$location)
   })
-  
+
   similarData <- reactive({
     req(input$year, input$location)
-    
+
     selected_city <- filteredDataByYear_eUFA()
     comparison_cities <- comparisonGroupDataByYear_eUFA()
-    
-    employment_cols <- c("Public_Services_Emp_Pct", "Industry_Emp_Pct", 
-                         "Financial_Busines_Services_Emp_Pct", "Consumer_Services_Emp_Pct",
-                         "Agriculture_Emp_Pct", "Transport_Information_Communic_Services_Emp_Pct")
-    
+
+    employment_cols <- c(
+      "Public_Services_Emp_Pct", "Industry_Emp_Pct",
+      "Financial_Busines_Services_Emp_Pct", "Consumer_Services_Emp_Pct",
+      "Agriculture_Emp_Pct", "Transport_Information_Communic_Services_Emp_Pct"
+    )
+
     distances <- comparison_cities %>%
       mutate(distance = sqrt(
         (Public_Services_Emp_Pct - selected_city$Public_Services_Emp_Pct)^2 +
-        (Industry_Emp_Pct - selected_city$Industry_Emp_Pct)^2 +
-        (Financial_Busines_Services_Emp_Pct - selected_city$Financial_Busines_Services_Emp_Pct)^2 +
-        (Consumer_Services_Emp_Pct - selected_city$Consumer_Services_Emp_Pct)^2 +
-        (Agriculture_Emp_Pct - selected_city$Agriculture_Emp_Pct)^2 +
-        (Transport_Information_Communic_Services_Emp_Pct - selected_city$Transport_Information_Communic_Services_Emp_Pct)^2
+          (Industry_Emp_Pct - selected_city$Industry_Emp_Pct)^2 +
+          (Financial_Busines_Services_Emp_Pct - selected_city$Financial_Busines_Services_Emp_Pct)^2 +
+          (Consumer_Services_Emp_Pct - selected_city$Consumer_Services_Emp_Pct)^2 +
+          (Agriculture_Emp_Pct - selected_city$Agriculture_Emp_Pct)^2 +
+          (Transport_Information_Communic_Services_Emp_Pct - selected_city$Transport_Information_Communic_Services_Emp_Pct)^2
       ))
-    
-    similar_city <- distances %>% 
-      arrange(distance) %>% 
+
+    similar_city <- distances %>%
+      arrange(distance) %>%
       slice_head(n = 1)
-      
+
     different_city <- distances %>%
       arrange(desc(distance)) %>%
       slice_head(n = 1)
-      
+
     bind_rows(similar_city, different_city)
   })
-  
+
   # Data Table Output for eUFA
   output$dataTable <- DT::renderDataTable({
     if (input$sidebarMenu == "eUFA") {
       if (input$section == "GDP per capita (PPP)") {
         data <- filteredDataByYear_eUFA() %>%
           select(-ends_with("Emp_Pct"))
-        
+
         comparison_data <- comparisonGroupDataByYear_eUFA() %>%
           select(-ends_with("Emp_Pct"))
-       
+
         combined_data <- bind_rows(data, comparison_data)
         combined_data <- combined_data %>%
           mutate(GDP_per_capita_PPP = scales::comma(GDP_per_capita_PPP * 1000, accuracy = 0.1))
-       
+
         datatable(combined_data)
-        
       } else if (input$section == "Employment structure") {
         data <- filteredDataByYear_eUFA() %>%
           select(-ends_with("Emp_Pct"))
-        
+
         comparison_data <- comparisonGroupDataByYear_eUFA() %>%
           select(-ends_with("Emp_Pct"))
-        
+
         combined_data <- bind_rows(data, comparison_data)
         combined_data <- combined_data %>%
           mutate(GDP_per_capita_PPP = scales::comma(GDP_per_capita_PPP * 1000, accuracy = 0.1))
-       
+
         datatable(combined_data)
       }
     }
   })
-  
+
   # Plot Output for GDP per capita (PPP)
   output$plotOutput_eUFA <- renderPlot({
     if (input$sidebarMenu == "eUFA" && input$section == "GDP per capita (PPP)") {
-    
       ggplot() +
-        geom_line(data = comparisonGroupData_eUFA(), 
-                  aes(x = Year, y = GDP_per_capita_PPP, group = Location), 
-                  color = "gray80", 
-                  alpha = 0.6) +
-        geom_line(data = filteredData_eUFA(), 
-                  aes(x = Year, y = GDP_per_capita_PPP, group = Location), 
-                  color = "red", 
-                  linewidth = 1.2) +
-        geom_text_repel(data = comparisonGroupData_eUFA() %>% filter(Year == max(oe_data_shi$Year)),
-                        aes(x = Year, y = GDP_per_capita_PPP, label = Location),
-                        color = "gray40",
-                        size = 3,
-                        direction = "y",
-                        hjust = -0.2,
-                        segment.size = 0.3,
-                        force = 0.5,
-                        max.overlaps = 20) + 
-        geom_text_repel(data = filteredData_eUFA() %>% filter(Year == max(oe_data_shi$Year)),
-                        aes(x = Year, y = GDP_per_capita_PPP, label = Location),
-                        color = "red",
-                        size = 5,
-                        fontface = "bold",
-                        direction = "y",
-                        hjust = -0.9,  # Push farther
-                        segment.size = 0.5,
-                        force = 0.5,
-                        max.overlaps = 20) + 
-        labs(title = "GDP per Capita PPP over Years",
-             x = "Year", 
-             y = "GDP per Capita PPP") +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10),  
-                         labels = scales::label_number(scale = 1, suffix = "K")) +       
+        geom_line(
+          data = comparisonGroupData_eUFA(),
+          aes(x = Year, y = GDP_per_capita_PPP, group = Location),
+          color = "gray80",
+          alpha = 0.6
+        ) +
+        geom_line(
+          data = filteredData_eUFA(),
+          aes(x = Year, y = GDP_per_capita_PPP, group = Location),
+          color = "red",
+          linewidth = 1.2
+        ) +
+        geom_text_repel(
+          data = comparisonGroupData_eUFA() %>% filter(Year == max(oe_data_shi$Year)),
+          aes(x = Year, y = GDP_per_capita_PPP, label = Location),
+          color = "gray40",
+          size = 3,
+          direction = "y",
+          hjust = -0.2,
+          segment.size = 0.3,
+          force = 0.5,
+          max.overlaps = 20
+        ) +
+        geom_text_repel(
+          data = filteredData_eUFA() %>% filter(Year == max(oe_data_shi$Year)),
+          aes(x = Year, y = GDP_per_capita_PPP, label = Location),
+          color = "red",
+          size = 5,
+          fontface = "bold",
+          direction = "y",
+          hjust = -0.9, # Push farther
+          segment.size = 0.5,
+          force = 0.5,
+          max.overlaps = 20
+        ) +
+        labs(
+          title = "GDP per Capita PPP over Years",
+          x = "Year",
+          y = "GDP per Capita PPP"
+        ) +
+        scale_y_continuous(
+          breaks = scales::pretty_breaks(n = 10),
+          labels = scales::label_number(scale = 1, suffix = "K")
+        ) +
         theme_minimal() +
-        theme(legend.position = "none",
-              axis.text.y = element_text(size = 10),
-              axis.ticks.y = element_line(linewidth = 0.5)
+        theme(
+          legend.position = "none",
+          axis.text.y = element_text(size = 10),
+          axis.ticks.y = element_line(linewidth = 0.5)
         )
     }
   })
-  
+
   # Plot Output for Employment Structure with Similar and Distant Cities
   output$employmentPlot_eUFA <- renderPlot({
     if (input$sidebarMenu == "eUFA" && input$section == "Employment structure") {
-      columns_to_pivot_Emp_Pct <- c("Public_Services_Emp_Pct",
-                    "Industry_Emp_Pct",
-                    "Financial_Busines_Services_Emp_Pct",
-                    "Consumer_Services_Emp_Pct",
-                    "Agriculture_Emp_Pct",
-                    "Transport_Information_Communic_Services_Emp_Pct")
+      columns_to_pivot_Emp_Pct <- c(
+        "Public_Services_Emp_Pct",
+        "Industry_Emp_Pct",
+        "Financial_Busines_Services_Emp_Pct",
+        "Consumer_Services_Emp_Pct",
+        "Agriculture_Emp_Pct",
+        "Transport_Information_Communic_Services_Emp_Pct"
+      )
 
       selected_city_data <- filteredDataByYear_eUFA()
       comparator_data <- similarData()
-      
-      most_similar <- comparator_data %>% 
-        arrange(distance) %>% 
+
+      most_similar <- comparator_data %>%
+        arrange(distance) %>%
         slice_head(n = 1)
-      
+
       most_different <- comparator_data %>%
         arrange(desc(distance)) %>%
         slice_head(n = 1)
-      
+
       plot_data_list <- list(
         selected = selected_city_data,
         similar = most_similar,
         different = most_different
       )
-      
+
       plots <- lapply(names(plot_data_list), function(city_type) {
         data <- plot_data_list[[city_type]] %>%
-          pivot_longer(cols = all_of(columns_to_pivot_Emp_Pct), 
-                      names_to = "Employment_sector", 
-                      values_to = "Percentage") %>%
+          pivot_longer(
+            cols = all_of(columns_to_pivot_Emp_Pct),
+            names_to = "Employment_sector",
+            values_to = "Percentage"
+          ) %>%
           mutate(Employment_sector = gsub("(_Emp_Pct|_)", " ", Employment_sector))
-        
+
         title <- switch(city_type,
           "selected" = paste("Selected City:", unique(data$Location)),
           "similar" = paste("Most Similar:", unique(data$Location)),
           "different" = paste("Most Different:", unique(data$Location))
         )
-        
+
         ggplot(data, aes(x = 1, y = Percentage, fill = Employment_sector)) +
           geom_bar(stat = "identity", position = "fill") +
-          scale_fill_manual(values = wes_palette("Zissou1", 
-                           n = length(unique(data$Employment_sector)), 
-                           type = "continuous")) +
+          scale_fill_manual(values = wes_palette("Zissou1",
+            n = length(unique(data$Employment_sector)),
+            type = "continuous"
+          )) +
           labs(title = title) +
           theme_minimal() +
           scale_y_continuous(labels = scales::percent_format(), name = NULL) +
           scale_x_discrete(name = NULL, breaks = NULL) +
-          theme(legend.position = "bottom",
-                legend.title = element_blank(),
-                plot.title = element_text(size = 10, face = "bold"),
-                legend.text = element_text(size = 8)) +
+          theme(
+            legend.position = "bottom",
+            legend.title = element_blank(),
+            plot.title = element_text(size = 10, face = "bold"),
+            legend.text = element_text(size = 8)
+          ) +
           geom_text(aes(label = scales::percent(Percentage, accuracy = 0.1)),
-                   position = position_fill(vjust = 0.5), size = 3)
+            position = position_fill(vjust = 0.5), size = 3
+          )
       })
-      
-            gridExtra::grid.arrange(grobs = plots, ncol = 3)
+
+      gridExtra::grid.arrange(grobs = plots, ncol = 3)
     }
   })
 
   # Urban Centres
   output$urbanOutput <- renderUI({
-      if (!is.null(input$urbanCentre) && input$urbanCentre != "") {
-          plotOutput("urbanPlotCity")
-      } else if (!is.null(input$comparators) && input$comparators != "") {
-          plotOutput("urbanPlotcomparators")
-      } else if (!is.null(input$country) && input$country != "") {
-          plotOutput("urbanPlotCountry")
-      }
+    if (!is.null(input$urbanCentre) && input$urbanCentre != "") {
+      plotOutput("urbanPlotCity")
+    } else if (!is.null(input$comparators) && input$comparators != "") {
+      plotOutput("urbanPlotcomparators")
+    } else if (!is.null(input$country) && input$country != "") {
+      plotOutput("urbanPlotCountry")
+    }
   })
-  
+
   urbanDataCity <- reactive({
-      req(input$urbanCentre)
-      built_ucdb %>%
-          filter(Urban_centre == input$urbanCentre)
+    req(input$urbanCentre)
+    built_ucdb %>%
+      filter(Urban_centre == input$urbanCentre)
   })
-  
-  urbanDatacomparators <- reactive({
-      req(input$comparators)
-      built_ucdb %>%
-          filter(Urban_centre %in% input$comparators)
-  })
-  
+
   urbanDataCountry <- reactive({
-      req(input$country)
-      built_ucdb %>%
-          filter(Country == input$country)
+    req(input$country)
+    built_ucdb %>%
+      filter(Country == input$country)
   })
-  
+
   output$urbanDataTable <- DT::renderDataTable({
-      if (!is.null(input$urbanCentre) && input$urbanCentre != "") {
-          city_data <- urbanDataCity()
-          city_summary <- city_data %>%
-              filter(!is.na(Built_rel_change)) %>%
-              summarise(
-                  Value = unique(Built_rel_change)
-              )
-          datatable(city_summary, options = list(pageLength = 5), rownames = FALSE)
-      } else if (!is.null(input$comparators) && input$comparators != "") {
-          comparators_data <- urbanDatacomparators()
-          comparators_summary <- comparators_data %>%
-              filter(!is.na(Built_rel_change)) %>%
-              summarise(
-                  Average = mean(Built_rel_change, na.rm = TRUE),
-                  Minimum = if (all(is.na(Built_rel_change))) NA else min(Built_rel_change, na.rm = TRUE),
-                  Maximum = if (all(is.na(Built_rel_change))) NA else max(Built_rel_change, na.rm = TRUE)
-              )
-          datatable(comparators_summary, options = list(pageLength = 5), rownames = FALSE)
-      } else if (!is.null(input$country) && input$country != "") {
-          country_data <- urbanDataCountry()
-          country_summary <- country_data %>%
-              filter(!is.na(Built_rel_change)) %>%
-              summarise(
-                  Average = mean(Built_rel_change, na.rm = TRUE),
-                  Minimum = if (all(is.na(Built_rel_change))) NA else max(Built_rel_change, na.rm = TRUE)
-              )
-          datatable(country_summary, options = list(pageLength = 5), rownames = FALSE)
-      }
+    if (!is.null(input$urbanCentre) && input$urbanCentre != "") {
+      city_data <- urbanDataCity()
+      city_summary <- city_data %>%
+        filter(!is.na(Built_rel_change)) %>%
+        summarise(
+          Value = unique(Built_rel_change)
+        )
+      datatable(city_summary, options = list(pageLength = 5), rownames = FALSE)
+    } else if (!is.null(input$comparators) && input$comparators != "") {
+      comparators_data <- urbanDatacomparators()
+      comparators_summary <- comparators_data %>%
+        filter(!is.na(Built_rel_change)) %>%
+        summarise(
+          Average = mean(Built_rel_change, na.rm = TRUE),
+          Minimum = if (all(is.na(Built_rel_change))) NA else min(Built_rel_change, na.rm = TRUE),
+          Maximum = if (all(is.na(Built_rel_change))) NA else max(Built_rel_change, na.rm = TRUE)
+        )
+      datatable(comparators_summary, options = list(pageLength = 5), rownames = FALSE)
+    } else if (!is.null(input$country) && input$country != "") {
+      country_data <- urbanDataCountry()
+      country_summary <- country_data %>%
+        filter(!is.na(Built_rel_change)) %>%
+        summarise(
+          Average = mean(Built_rel_change, na.rm = TRUE),
+          Minimum = if (all(is.na(Built_rel_change))) NA else max(Built_rel_change, na.rm = TRUE)
+        )
+      datatable(country_summary, options = list(pageLength = 5), rownames = FALSE)
+    }
   })
-  
+
   output$urbanPlotCity <- renderPlot({
-      city_data <- urbanDataCity()
-      comparators_data <- urbanDatacomparators()
-      
-      combined_data <- comparators_data %>%
-          bind_rows(city_data) %>%
-          filter(Urban_centre == input$urbanCentre | Urban_centre %in% comparators_data$Urban_centre) %>%
-          arrange(desc(Built_rel_change))
-      
-      ggplot(combined_data, aes(x = reorder(Urban_centre, Built_rel_change), y = Built_rel_change, fill = Urban_centre == input$urbanCentre)) +
-          geom_bar(stat = "identity") +
-          scale_fill_manual(values = c("TRUE" = "red", "FALSE" = "gray80")) +
-          labs(title = paste("Built-up Surface Relative Change for", input$urbanCentre, "and Comparison Group"),
-              x = "Urban Centre", y = "Built-up Surface Relative Change") +
-          theme_minimal() +
-          theme(legend.position = "none")
+    city_data <- urbanDataCity()
+    comparators_data <- urbanDatacomparators()
+
+    combined_data <- comparators_data %>%
+      bind_rows(city_data) %>%
+      filter(Urban_centre == input$urbanCentre | Urban_centre %in% comparators_data$Urban_centre) %>%
+      arrange(desc(Built_rel_change))
+
+    ggplot(combined_data, aes(x = reorder(Urban_centre, Built_rel_change), y = Built_rel_change)) +
+      geom_bar(stat = "identity", aes(fill = Urban_centre == input$urbanCentre)) +
+      scale_fill_manual(values = c("TRUE" = "red", "FALSE" = "gray80")) +
+      geom_text_repel(
+        data = combined_data %>% filter(Urban_centre != input$urbanCentre),
+        aes(label = Urban_centre), size = 3, color = "black"
+      ) +
+      geom_text(
+        data = combined_data %>% filter(Urban_centre == input$urbanCentre),
+        aes(label = Urban_centre), size = 4, color = "red", fontface = "bold"
+      ) +
+      labs(
+        title = paste("Built-up Surface Relative Change for"
+                      , input$urbanCentre
+                      , "and Comparison Group"),
+        x = "Urban Centre", y = "Built-up Surface Relative Change"
+      ) +
+      theme_minimal() +
+      theme(legend.position = "none")
   })
-  
+
   output$urbanPlotcomparators <- renderPlot({
-      comparators_data <- urbanDatacomparators()
-      city_data <- urbanDataCity()
-      
-      combined_data <- comparators_data %>%
-          bind_rows(city_data) %>%
-          filter(Urban_centre == input$urbanCentre | Urban_centre %in% comparators_data$Urban_centre) %>%
-          arrange(desc(Built_rel_change))
-      
-      ggplot(combined_data, aes(x = reorder(Urban_centre, Built_rel_change), y = Built_rel_change, fill = Urban_centre == input$urbanCentre)) +
-          geom_bar(stat = "identity") +
-          scale_fill_manual(values = c("TRUE" = "red", "FALSE" = "gray80")) +
-          labs(title = paste("Built-up Surface Relative Change in", input$comparators, "with", input$urbanCentre),
-              x = "Urban Centre", y = "Built-up Surface Relative Change") +
-          theme_minimal() +
-          theme(legend.position = "none")
+    comparators_data <- urbanDatacomparators()
+    city_data <- urbanDataCity()
+
+    combined_data <- comparators_data %>%
+      bind_rows(city_data) %>%
+      filter(Urban_centre == input$urbanCentre | Urban_centre %in% comparators_data$Urban_centre) %>%
+      arrange(desc(Built_rel_change))
+
+    ggplot(combined_data, aes(x = reorder(Urban_centre, Built_rel_change), y = Built_rel_change)) +
+      geom_bar(stat = "identity", aes(fill = Urban_centre == input$urbanCentre)) +
+      scale_fill_manual(values = c("TRUE" = "red", "FALSE" = "gray80")) +
+      geom_text_repel(
+        data = combined_data %>% filter(Urban_centre != input$urbanCentre),
+        aes(label = Urban_centre), size = 3, color = "black"
+      ) +
+      geom_text(
+        data = combined_data %>% filter(Urban_centre == input$urbanCentre),
+        aes(label = Urban_centre), size = 4, color = "red", fontface = "bold"
+      ) +
+      labs(
+        title = paste("Built-up Surface Relative Change in"
+                      , input$comparators
+                      , "with", input$urbanCentre),
+        x = "Urban Centre", y = "Built-up Surface Relative Change 2010 -2020"
+      ) +
+      theme_minimal() +
+      theme(legend.position = "none")
   })
 }
-
-
 ```
 
 ```{r deploy}
-
 shinyApp(ui = ui, server = server)
-
 ```
