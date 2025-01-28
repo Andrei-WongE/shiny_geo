@@ -19,6 +19,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # install.packages("DT")
 # install.packages("scales")
 # install.packages("shinydashboard")
+# install.packages('rsconnect')
 
 library(shiny)
 library(dplyr)
@@ -30,6 +31,7 @@ library(wesanderson)
 library(DT)
 library(scales)
 library(shinydashboard)
+library(rsconnect)
 
 # Loading data
 load(here("Data", "shiny_data.RData"))
@@ -349,4 +351,3 @@ server <- function(input, output, session) {
 shinyApp(ui = ui, server = server)
 
 ```
-

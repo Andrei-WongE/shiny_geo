@@ -16,6 +16,7 @@
 /data/
 /.quarto/
 /src/
+/rsconnect/
 # Output files from R CMD build
 /*.tar.gz
 # Output files from R CMD check
