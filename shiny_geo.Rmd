@@ -17,6 +17,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # install.packages("ggrepel")
 # install.packages("wesanderson")
 # install.packages("DT")
+# install.packages("scales")
 
 library(shiny)
 library(dplyr)
@@ -26,6 +27,7 @@ library(tidyr)
 library(ggrepel)
 library(wesanderson)
 library(DT)
+library(scales)
 
 # Loading data
 load(here("Data", "shiny_data.RData"))
@@ -89,7 +91,7 @@ server <- function(input, output) {
     req(input$location)
     oe_data_shi %>%
       filter(Location == input$location)
-  })
+    })
   
   filteredDataByYear <- reactive({
     req(input$year, input$location)
@@ -113,21 +115,38 @@ server <- function(input, output) {
     if (input$section == "GDP per capita (PPP)") {
       data <- filteredDataByYear() %>%
         select(-ends_with("Emp_Pct"))
+      
       comparison_data <- comparisonGroupDataByYear() %>%
         select(-ends_with("Emp_Pct"))
+     
       datatable(bind_rows(data, comparison_data))
+      
+     combined_data <- bind_rows(data, comparison_data)
+     combined_data <- combined_data %>%
+      mutate(GDP_per_capita_PPP = scales::comma(GDP_per_capita_PPP * 1000, accuracy = 0.1))
+     
+     datatable(combined_data)
       
     } else if (input$section == "Employment structure") {
       data <- filteredDataByYear() %>%
         select(-ends_with("Emp_Pct"))
+      
       comparison_data <- comparisonGroupDataByYear() %>%
         select(-ends_with("Emp_Pct"))
+      
       datatable(bind_rows(data, comparison_data))
+      
+      combined_data <- bind_rows(data, comparison_data)
+      combined_data <- combined_data %>%
+      mutate(GDP_per_capita_PPP = scales::comma(GDP_per_capita_PPP * 1000, accuracy = 0.1))
+     
+      datatable(combined_data)
     }
   })
   
   output$plotOutput <- renderPlot({
     if (input$section == "GDP per capita (PPP)") {
+    
       ggplot() +
         # Background lines for comparison cities
         geom_line(data = comparisonGroupData(), 
@@ -139,7 +158,7 @@ server <- function(input, output) {
         geom_line(data = filteredData(), 
                   aes(x = Year, y = GDP_per_capita_PPP, group = Location), 
                   color = "red", 
-                  size = 1.2) +
+                  linewidth = 1.2) +
         
         # Labels for comparison cities at the end
         geom_text_repel(data = comparisonGroupData() %>% filter(Year == max(oe_data_shi$Year)),
@@ -150,53 +169,60 @@ server <- function(input, output) {
                         hjust = -0.2,
                         segment.size = 0.3,
                         force = 0.5,
-                        max.overlaps = 50) + # Adjust max.overlaps
+                        max.overlaps = 20) + 
                        
         # Label for selected city at the end
         geom_text_repel(data = filteredData() %>% filter(Year == max(oe_data_shi$Year)),
                         aes(x = Year, y = GDP_per_capita_PPP, label = Location),
                         color = "red",
-                        size = 4,
+                        size = 5,
                         fontface = "bold",
                         direction = "y",
-                        hjust = -0.2,
+                        hjust = -0.9,  # Push farther
                         segment.size = 0.5,
                         force = 0.5,
-                        max.overlaps = 50) + # Adjust max.overlaps
+                        max.overlaps = 20) + 
                        
         labs(title = "GDP per Capita PPP over Years",
              x = "Year", 
              y = "GDP per Capita PPP") +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 10),  
+                         labels = scales::label_number(scale = 1, suffix = "K")) +       
         theme_minimal() +
-        theme(legend.position = "none")
+        theme(legend.position = "none",
+              axis.text.y = element_text(size = 10),
+            axis.ticks.y = element_line(linewidth = 0.5)
+      )
     }
   })
   
-  output$employmentPlot <- renderPlot({
-    if (input$section == "Employment structure") {
-      columns_to_pivot_Emp_Pct <- c("Public_Services_Emp_Pct",
-                      "Industry_Emp_Pct",
-                      "Financial_Busines_Serices_Emp_Pct",
-                      "Consumer_services_Emp_Pct",
-                      "Agriculture_Emp_Pct",
-                      "Transport_Information_Communic_Services_Emp_Pct")
+output$employmentPlot <- renderPlot({
+  if (input$section == "Employment structure") {
+    columns_to_pivot_Emp_Pct <- c("Public_Services_Emp_Pct",
+                    "Industry_Emp_Pct",
+                    "Financial_Busines_Services_Emp_Pct",
+                    "Consumer_Services_Emp_Pct",
+                    "Agriculture_Emp_Pct",
+                    "Transport_Information_Communic_Services_Emp_Pct")
 
-      pie_data3 <- filteredDataByYear() %>%
-        pivot_longer(cols = all_of(columns_to_pivot_Emp_Pct), names_to = "Employment_sector", values_to = "Percentage") %>%
-        mutate(Employment_sector = gsub("(_Emp_Pct|_)", " ", Employment_sector))
+    pie_data3 <- filteredDataByYear() %>%
+      pivot_longer(cols = all_of(columns_to_pivot_Emp_Pct), names_to = "Employment_sector", values_to = "Percentage") %>%
+      mutate(Employment_sector = gsub("(_Emp_Pct|_)", " ", Employment_sector))
 
-      ggplot(pie_data3, aes(x = Location, y = Percentage, fill = Employment_sector)) +
-        geom_bar(stat = "identity", position = "fill") +
-        scale_fill_manual(values = wes_palette("Zissou1", n = length(unique(pie_data3$Employment_sector)), type = "continuous")) + # Using a continuous palette for colors
-        labs(title = "Employment Sector Percentage by Selected Categories",
-             x = "Location",
-             y = "Percentage") +
-        theme_minimal() +
-        scale_y_continuous(labels = scales::percent_format()) +
-        geom_text(aes(label = scales::percent(Percentage, accuracy = 0.1)),
-                  position = position_fill(vjust = 0.5), size = 4)
-    }
-  })
+    ggplot(pie_data3, aes(x = Location, y = Percentage, fill = Employment_sector)) +
+      geom_bar(stat = "identity", position = "fill") +
+      scale_fill_manual(values = wes_palette("Zissou1", n = length(unique(pie_data3$Employment_sector)), type = "continuous")) + 
+      labs(title = paste("Employment Sector Contribution, ", input$location),
+           x = "Location") +
+      theme_minimal() +
+      scale_y_continuous(labels = scales::percent_format(), name = NULL) + 
+      scale_x_discrete(name = NULL, breaks = NULL) + 
+      theme(legend.title = element_blank(), legend.text = element_text(size = 11)) +
+      geom_text(aes(label = scales::percent(Percentage, accuracy = 0.1)),
+                position = position_fill(vjust = 0.5), size = 4)
+  }
+})
+
 }
 ```
 
