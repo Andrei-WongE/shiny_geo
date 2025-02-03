@@ -60,7 +60,7 @@ ui <- dashboardPage(
           sidebarPanel(
             width = 2,
             selectInput("year", "Select Year:", choices = unique(oe_data_shi$Year)),
-            selectInput("location", "Select City:", choices = unique(oe_data_shi$Location)),
+            selectInput("location", "Select City:", choices = unique(oe_data_shi$Location[order(oe_data_shi$Location)])),
             selectInput("comparators", "Select Comparison Group:", choices = unique(oe_data_shi$Comparators), selected = "MENA"),
             radioButtons("section", "Select:", choices = c("GDP per capita (PPP)", "Employment structure"))
           ),
@@ -77,7 +77,10 @@ ui <- dashboardPage(
           sidebarPanel(
             width = 2,
             h4("Select options below:"),
-            selectInput("urbanCentre", "Select City:", choices = c("", unique(built_ucdb$Urban_centre))),
+            selectInput("urbanCentre", "Select City:", choices = c("", sort(unique(built_ucdb$Urban_centre[
+  !grepl("^\\?|^[^a-zA-Z0-9]|\\d|\\?+", built_ucdb$Urban_centre) & 
+  !is.na(built_ucdb$Built_rel_change)])))
+                        ),
             selectInput("comparators", "Select Comparison Group:", choices = unique(oe_data_shi$Comparators), selected = "MENA")
           ),
           mainPanel(
@@ -195,7 +198,7 @@ server <- function(input, output, session) {
           select(-ends_with("Emp_Pct"))
 
         combined_data <- bind_rows(data, comparison_data)
-        combined_data <- combined_data %>%
+        combined_data <- combined_data %`>%
           mutate(GDP_per_capita_PPP = scales::comma(GDP_per_capita_PPP * 1000, accuracy = 0.1))
 
         datatable(combined_data)
