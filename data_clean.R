@@ -13,11 +13,17 @@
 # 
 # Comparison of economic growth – GVA OE 15 years line chart till 2021.
 # Comparison of employment growth: OE 15 years line chart till 2021.
+# Comparison of the structure of GVA : OE, % bar charts. 2019
+# Comparison of structure of employment: OE, % bar charts 2019
+
+
+
 # Comparison of growth of Night lights: total of eFUAs (15 years) – line chart
 # Comparison of growth of total build up area eFUA (25 years) – line chart
 # Comparison of gdp growth using GDP from UCDB – sum of all centers, (not sure what the time range is for it  - so make a call)
-# Comparison of the structure of GVA : OE, % bar charts. 2019
-# Comparison of structure of employment: OE, % bar charts 2019
+
+
+
 # Timeseries bar charts for shifts of employment structure for each city (hopefully you can stack them on one page). OE – 15 years.til 2021
 # Timeseries bar charts for shifts of GVA structure for each city. Till 2021
 # Comparison structure bar charts for high – low skill employment using the data for eFUAs from bens dataset, use lates year available.
