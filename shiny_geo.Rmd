@@ -65,6 +65,15 @@ ui <- dashboardPage(
           color: white !important;
         }
         
+         #employmentPlot_eFUA {
+          height: calc(100vh - 150px) !important;
+          width: 100% !important;
+        }
+        
+        .content-wrapper {
+          height: 100vh !important;
+        }
+            
         .comparison-cities .selectize-input .item {
           background-color: #80E68A !important;
           color: black !important;
@@ -103,7 +112,10 @@ ui <- dashboardPage(
           mainPanel(
             width = 10,
             uiOutput("dynamicPlot"),
-            DT::dataTableOutput("dataTable")
+            conditionalPanel(
+              condition = "input.section == 'GDP per capita (PPP)'",
+              DT::dataTableOutput("dataTable")
+            )
           )
         )
       ),
@@ -111,15 +123,19 @@ ui <- dashboardPage(
         tabName = "UrbanCentres",
         sidebarLayout(
           sidebarPanel(
-            width = 2,
-            h4("Select options below:"),
-            div(class = "main-city",
-    selectInput("urbanCentre", "Select Main City:", choices = c("", sort(unique(built_ucdb$Urban_centre[!grepl("[?]", built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", built_ucdb$Urban_centre) & !is.na(built_ucdb$Built_rel_change)]))))),
-            div(class = "urban-comparison",
-    selectInput("comparators_Urban", "Select Comparison Cities:",
-                choices = c("", sort(unique(built_ucdb$Urban_centre[!grepl("[?]", built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", built_ucdb$Urban_centre) & !is.na(built_ucdb$Built_rel_change)]))), 
-                multiple = TRUE))
-          ),
+              width = 2,
+              h4("Select options below:"),
+              div(class = "main-city",
+            selectInput("urbanCentre", "Select Main City:", choices = c("",               sort(unique(built_ucdb$Urban_centre[!grepl("[?]", built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", built_ucdb$Urban_centre) & !is.na(built_ucdb$Built_rel_change)]))))),
+              div(class = "urban-comparison",
+            selectInput("comparators_Urban", "Select Comparison Cities:",
+                        choices = c("", sort(unique(built_ucdb$Urban_centre[!grepl("[?]", built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", built_ucdb$Urban_centre) & !is.na(built_ucdb$Built_rel_change)]))), 
+                        multiple = TRUE)),
+              div(class = "aspirational-cities",
+            selectInput("aspirational_Urban", "Select Aspirational Cities:",
+                        choices = c("", sort(unique(built_ucdb$Urban_centre[!grepl("[?]", built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", built_ucdb$Urban_centre) & !is.na(built_ucdb$Built_rel_change)]))), 
+                        multiple = TRUE))
+),
           mainPanel(
             width = 10,
             uiOutput("urbanOutput"),
@@ -161,13 +177,17 @@ server <- function(input, output, session) {
                          choices = sort(unique(built_ucdb$Urban_centre[!grepl("[?]",           built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", built_ucdb$Urban_centre) &     !is.na(built_ucdb$Built_rel_change)])), 
                        server = TRUE)
   
+  updateSelectizeInput(session, "aspirational_Urban",
+                       choices = sort(unique(built_ucdb$Urban_centre[!grepl("[?]",           built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", built_ucdb$Urban_centre) &     !is.na(built_ucdb$Built_rel_change)])), 
+                     server = TRUE)
+  
   # Dynamic Plot UI
   output$dynamicPlot <- renderUI({
     if (input$sidebarMenu == "eFUA") {
       if (input$section == "GDP per capita (PPP)") {
         plotOutput("plotOutput_eFUA")
       } else if (input$section == "Employment structure") {
-        plotOutput("employmentPlot_eFUA")
+        plotOutput("employmentPlot_eFUA", height = "auto", width = "100%") # Adjusted for full width 
       }
     }
   })
@@ -188,9 +208,9 @@ server <- function(input, output, session) {
     })
   
   urbanDatacomparators <- reactive({
-    req(input$comparators)
+    req(input$comparators_Urban)
     built_ucdb %>%
-      filter(Comparators == input$comparators & !is.na(Built_rel_change))
+      filter(Urban_centre %in% input$comparators_Urban & !is.na(Built_rel_change))
   })
 
   # eFUA -----------------------------------------------------------------------
@@ -232,7 +252,7 @@ aspirationalGroupDataByYear_eFUA <- reactive({
 
   # Data Table Output for eFUA
   output$dataTable <- DT::renderDataTable({
-    if (input$sidebarMenu == "eFUA") {
+    if (input$sidebarMenu == "eFUA" && input$section == "GDP per capita (PPP)") { # Only show datable in GDP per capita (PPP) section
         data <- filteredDataByYear_eFUA() %>%
           select(-ends_with("Emp_Pct"))
     
@@ -258,14 +278,14 @@ aspirationalGroupDataByYear_eFUA <- reactive({
           data = comparisonGroupData_eFUA(),
           aes(x = Year, y = GDP_per_capita_PPP, group = Location),
           color = "#80E68A",
-          fontface = "bold",  
+          linewidth = 1.5,  
           alpha = 0.6
         ) +
         geom_line(
           data = aspirationalGroupData_eFUA(),
           aes(x = Year, y = GDP_per_capita_PPP, group = Location),
           color = "#5BC8F0",
-          fontface = "bold",
+          linewidth = 1.5,
           alpha = 0.6
         ) +
         geom_line(
@@ -355,13 +375,12 @@ aspirationalGroupDataByYear_eFUA <- reactive({
           
           ggplot(plot_data, aes(x = Location, y = Percentage, fill = Employment_sector)) +
             geom_bar(stat = "identity", position = "fill") +
-            scale_fill_manual(values = RColorBrewer::brewer.pal(length(unique(plot_data$Employment_sector)),
-                                                                 "Set3")) +
+            scale_fill_manual(values = RColorBrewer::brewer.pal(min(length(unique(plot_data$Employment_sector)), 11), "Set3")) +
             labs(title = title, y = "Percentage", fill = "Employment Sector") +
             theme_minimal() +
             scale_y_continuous(labels = scales::percent_format()) +
             theme(
-              axis.text.x = element_text(angle = 45, hjust = 1),
+              axis.text.x = element_text(angle = 0, hjust = 1, vjust = 0.5, size = 8),
               legend.position = "bottom",
               legend.title = element_blank(),
               plot.title = element_text(size = 12, face = "bold", color = color),
@@ -390,7 +409,7 @@ aspirationalGroupDataByYear_eFUA <- reactive({
         if (nrow(comparison_data) > 0) {
           plot_list[[length(plot_list) + 1]] <- create_employment_plot(comparison_data,
                                                 "Comparison Cities",
-                                                "#66a9c2")
+                                                "#80E68A")
         }
       }
       
@@ -400,13 +419,16 @@ aspirationalGroupDataByYear_eFUA <- reactive({
         if (nrow(aspirational_data) > 0) {
           plot_list[[length(plot_list) + 1]] <- create_employment_plot(aspirational_data,
                                                                        "Aspirational Cities",
-                                                                       "#1f4e79")
+                                                                       "#5BC8F0")
         }
       }
       
       # Arrange plots dynamically
       if (length(plot_list) > 0) {
-        gridExtra::grid.arrange(grobs = plot_list, ncol = 1)
+          do.call(gridExtra::grid.arrange, list(grobs = plot_list, ncol = 1, 
+                                                heights = rep(1, length(plot_list))
+                                                )
+                  )
       }
     }
   })
@@ -434,10 +456,10 @@ aspirationalGroupDataByYear_eFUA <- reactive({
       filter(Country == input$country)
   })
   
-  urbanDatacomparators <- reactive({
-  req(input$comparators_Urban)
-  built_ucdb %>%
-    filter(Urban_centre %in% input$comparators_Urban & !is.na(Built_rel_change))
+  urbanDataAspirational <- reactive({
+    req(input$aspirational_Urban)
+    built_ucdb %>%
+     filter(Urban_centre %in% input$aspirational_Urban & !is.na(Built_rel_change))
 })
   
   # Data Table Output for Urban Centres
@@ -454,6 +476,11 @@ aspirationalGroupDataByYear_eFUA <- reactive({
       combined_data <- rbind(combined_data, comparators_data)
     }
     
+    if (!is.null(input$aspirational_Urban) && length(input$aspirational_Urban) > 0) {
+      aspirational_data <- urbanDataAspirational() 
+      combined_data <- rbind(combined_data, aspirational_data)
+  }
+    
     DT::datatable(combined_data, options = list(pageLength = 5), rownames = FALSE)
   })
 
@@ -462,15 +489,23 @@ aspirationalGroupDataByYear_eFUA <- reactive({
   output$urbanPlotCity <- renderPlot({
     city_data <- urbanDataCity()
     comparators_data <- urbanDatacomparators()
+    aspirational_data <- urbanDataAspirational()
     
     combined_data <- comparators_data %>%
       bind_rows(city_data) %>%
-      filter(Urban_centre == input$urbanCentre | Urban_centre %in% input$comparators_Urban) %>%
+      bind_rows(aspirational_data) %>%
+      filter(Urban_centre == input$urbanCentre | Urban_centre %in% input$comparators_Urban | Urban_centre %in% input$aspirational_Urban) %>%
       arrange(desc(Built_rel_change))
     
+    # Create color mapping
+    combined_data$city_type <- ifelse(combined_data$Urban_centre == input$urbanCentre, 
+                                      "main",
+                                     ifelse(combined_data$Urban_centre %in% input$comparators_Urban, 
+                                            "comparison", "aspirational"))
+    
     ggplot(combined_data, aes(x = reorder(Urban_centre, Built_rel_change), y = Built_rel_change)) +
-      geom_bar(stat = "identity", aes(fill = Urban_centre == input$urbanCentre)) +
-      scale_fill_manual(values = c("TRUE" = "#cd402a", "FALSE" = "#66a9c2")) +
+    geom_bar(stat = "identity", aes(fill = city_type)) +
+    scale_fill_manual(values = c("main" = "#cd402a", "comparison" = "#66a9c2", "aspirational" = "#5BC8F0")) +
       geom_text(
         aes(label = scales::percent(Built_rel_change, scale = 100, accuracy = 0.1)),
         position = position_stack(vjust = 0.5),
