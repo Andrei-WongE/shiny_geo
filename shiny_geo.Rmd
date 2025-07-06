@@ -48,20 +48,23 @@ ui <- dashboardPage(
   dashboardSidebar(
     sidebarMenu(
       id = "sidebarMenu",
-      menuItem("eUFA", tabName = "eUFA", icon = icon("chart-bar")),
+      menuItem("eFUA", tabName = "eFUA", icon = icon("chart-bar")),
       menuItem("Urban Centres", tabName = "UrbanCentres", icon = icon("city"))
     )
   ),
   dashboardBody(
     tabItems(
       tabItem(
-        tabName = "eUFA",
+        tabName = "eFUA",
         sidebarLayout(
           sidebarPanel(
             width = 2,
             selectInput("year", "Select Year:", choices = sort(unique(oe_data_shi$Year))),
-            selectInput("location", "Select City:", choices = sort(unique(oe_data_shi$Location))),
-            selectInput("comparators_eUFA", "Select Comparison Cities (max. 3 cities):",
+            selectInput("location", "Select Main City:", choices = sort(unique(oe_data_shi$Location))),
+            selectInput("comparators_eFUA", "Select Comparison Cities (max. 4 cities):",
+                        choices = c("", sort(unique(oe_data_shi$Location[!grepl("^[^a-zA-Z0-9]", oe_data_shi$Location) & !is.na(oe_data_shi$GDP_per_capita_PPP)]))), 
+                        multiple = TRUE),
+            selectInput("aspirational_eFUA", "Select Aspirational Cities (max. 4 cities):",
                         choices = c("", sort(unique(oe_data_shi$Location[!grepl("^[^a-zA-Z0-9]", oe_data_shi$Location) & !is.na(oe_data_shi$GDP_per_capita_PPP)]))), 
                         multiple = TRUE),
             radioButtons("section", "Select:", choices = c("GDP per capita (PPP)", "Employment structure"))
@@ -79,7 +82,7 @@ ui <- dashboardPage(
           sidebarPanel(
             width = 2,
             h4("Select options below:"),
-            selectInput("urbanCentre", "Select City:", choices = c("", sort(unique(built_ucdb$Urban_centre[!grepl("[?]", built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", built_ucdb$Urban_centre) & !is.na(built_ucdb$Built_rel_change)])))),
+            selectInput("urbanCentre", "Select Main City:", choices = c("", sort(unique(built_ucdb$Urban_centre[!grepl("[?]", built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", built_ucdb$Urban_centre) & !is.na(built_ucdb$Built_rel_change)])))),
             selectInput("comparators_Urban", "Select Comparison Cities:",
                         choices = c("", sort(unique(built_ucdb$Urban_centre[!grepl("[?]", built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", built_ucdb$Urban_centre) & !is.na(built_ucdb$Built_rel_change)]))), 
                         multiple = TRUE)
@@ -103,22 +106,51 @@ ui <- dashboardPage(
 ```{r sever, echo=FALSE}
 
 server <- function(input, output, session) {
+  
+  # Server-side selectize updates, to imrpove performance by creating a select list from list of values
+  updateSelectizeInput(session, "location",
+                       choices = sort(unique(oe_data_shi$Location)),
+                       server = TRUE)
+  
+  updateSelectizeInput(session, "comparators_eFUA",
+                       choices = sort(unique(oe_data_shi$Location[!grepl("^[^a-zA-Z0-9]",       oe_data_shi$Location) & !is.na(oe_data_shi$GDP_per_capita_PPP)])),
+                       server = TRUE)
+  
+  updateSelectizeInput(session, "aspirational_eFUA",
+                     choices = sort(unique(oe_data_shi$Location[!grepl("^[^a-zA-Z0-9]",         oe_data_shi$Location) & !is.na(oe_data_shi$GDP_per_capita_PPP)])),
+                     server = TRUE)
+  
+  updateSelectizeInput(session, "urbanCentre",
+                       choices = sort(unique(built_ucdb$Urban_centre[!grepl("[?]",              built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", built_ucdb$Urban_centre)     &    !is.na(built_ucdb$Built_rel_change)])), 
+                       server = TRUE)
+  
+  updateSelectizeInput(session, "comparators_Urban",
+                         choices = sort(unique(built_ucdb$Urban_centre[!grepl("[?]",           built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", built_ucdb$Urban_centre) &     !is.na(built_ucdb$Built_rel_change)])), 
+                       server = TRUE)
+  
   # Dynamic Plot UI
   output$dynamicPlot <- renderUI({
-    if (input$sidebarMenu == "eUFA") {
+    if (input$sidebarMenu == "eFUA") {
       if (input$section == "GDP per capita (PPP)") {
-        plotOutput("plotOutput_eUFA")
+        plotOutput("plotOutput_eFUA")
       } else if (input$section == "Employment structure") {
-        plotOutput("employmentPlot_eUFA")
+        plotOutput("employmentPlot_eFUA")
       }
     }
   })
   
-  # Validation to limit comparators_eUFA to 3
+  # Validation to limit comparators_eFUA to 4
   observe({
-    if (length(input$comparators_eUFA) > 3) {
-      updateSelectInput(session, "comparators_eUFA",
-                        selected = input$comparators_eUFA[1:3])
+    if (length(input$comparators_eFUA) > 4) {
+      updateSelectizeInput(session, "comparators_eFUA", # Updated for selectize
+                        selected = input$comparators_eFUA[1:4])
+    }
+    })
+  
+  observe({
+  if (length(input$aspirational_eFUA) > 4) {
+    updateSelectizeInput(session, "aspirational_eFUA",
+                        selected = input$aspirational_eFUA[1:4])
     }
     })
   
@@ -128,67 +160,89 @@ server <- function(input, output, session) {
       filter(Comparators == input$comparators & !is.na(Built_rel_change))
   })
 
-  # eUFA -----------------------------------------------------------------------
-  filteredData_eUFA <- reactive({
+  # eFUA -----------------------------------------------------------------------
+  filteredData_eFUA <- reactive({
     req(input$location)
     oe_data_shi %>%
       filter(Location == input$location)
   })
 
-  filteredDataByYear_eUFA <- reactive({
+  filteredDataByYear_eFUA <- reactive({
     req(input$year, input$location)
     oe_data_shi %>%
       filter(Year == input$year & Location == input$location)
   })
 
-  comparisonGroupData_eUFA <- reactive({
-    req(input$comparators_eUFA)
+  comparisonGroupData_eFUA <- reactive({
+    req(input$comparators_eFUA)
     oe_data_shi %>%
-      filter(Location %in% input$comparators_eUFA)
+      filter(Location %in% input$comparators_eFUA)
   })
 
-  comparisonGroupDataByYear_eUFA <- reactive({
-    req(input$year, input$comparators_eUFA)
+  comparisonGroupDataByYear_eFUA <- reactive({
+    req(input$year, input$comparators_eFUA)
     oe_data_shi %>%
-      filter(Year == input$year & Location %in% input$comparators_eUFA)
+      filter(Year == input$year & Location %in% input$comparators_eFUA)
+  })
+  
+  aspirationalGroupData_eUFA <- reactive({
+  req(input$aspirational_eFUA)
+  oe_data_shi %>%
+    filter(Location %in% input$aspirational_eFUA)
   })
 
-  # Data Table Output for eUFA
+aspirationalGroupDataByYear_eUFA <- reactive({
+  req(input$year, input$aspirational_eFUA)
+  oe_data_shi %>%
+    filter(Year == input$year & Location %in% input$aspirational_eFUA)
+  })
+
+  # Data Table Output for eFUA
   output$dataTable <- DT::renderDataTable({
-    if (input$sidebarMenu == "eUFA") {
-        data <- filteredDataByYear_eUFA() %>%
+    if (input$sidebarMenu == "eFUA") {
+        data <- filteredDataByYear_eFUA() %>%
           select(-ends_with("Emp_Pct"))
     
-        comparison_data <- comparisonGroupDataByYear_eUFA() %>%
+        comparison_data <- comparisonGroupDataByYear_eFUA() %>%
           select(-ends_with("Emp_Pct"))
     
-        combined_data <- bind_rows(data, comparison_data) %>%
-          mutate(GDP_per_capita_PPP = scales::comma(GDP_per_capita_PPP * 1000, accuracy = 0.1))
-    
+        aspirational_data <- aspirationalGroupDataByYear_eUFA() %>%
+          select(-ends_with("Emp_Pct"))
+
+        combined_data <- bind_rows(data, comparison_data, aspirational_data) %>%
+          mutate(GDP_per_capita_PPP = scales::comma(GDP_per_capita_PPP * 1000,
+                                                    accuracy = 0.1))
+            
         DT::datatable(combined_data)
     }
   })
 
   # Plot Output for GDP per capita (PPP)
-   output$plotOutput_eUFA <- renderPlot({
-    if (input$sidebarMenu == "eUFA" && input$section == "GDP per capita (PPP)") {
+   output$plotOutput_eFUA <- renderPlot({
+    if (input$sidebarMenu == "eFUA" && input$section == "GDP per capita (PPP)") {
       ggplot() +
         geom_line(
-          data = comparisonGroupData_eUFA(),
+          data = comparisonGroupData_eFUA(),
           aes(x = Year, y = GDP_per_capita_PPP, group = Location),
-          color = "#66a9c2",
+          color = "#80E68A",
           alpha = 0.6
         ) +
         geom_line(
-          data = filteredData_eUFA(),
+          data = aspirationalGroupData_eUFA(),
+          aes(x = Year, y = GDP_per_capita_PPP, group = Location),
+          color = "#5BC8F0",
+          alpha = 0.6
+        ) +
+        geom_line(
+          data = filteredData_eFUA(),
           aes(x = Year, y = GDP_per_capita_PPP, group = Location),
           color = "#cd402a",
           linewidth = 1.2
         ) +
         geom_text_repel(
-          data = comparisonGroupData_eUFA() %>% filter(Year == max(oe_data_shi$Year)),
+          data = comparisonGroupData_eFUA() %>% filter(Year == max(oe_data_shi$Year)),
           aes(x = Year, y = GDP_per_capita_PPP, label = Location),
-          color = "#66a9c2",
+          color = "#80E68A",
           size = 5,
           direction = "y",
           hjust = -0.2,
@@ -197,7 +251,18 @@ server <- function(input, output, session) {
           max.overlaps = 20
         ) +
         geom_text_repel(
-          data = filteredData_eUFA() %>% filter(Year == max(oe_data_shi$Year)),
+          data = aspirationalGroupData_eUFA() %>% filter(Year == max(oe_data_shi$Year)),
+          aes(x = Year, y = GDP_per_capita_PPP, label = Location),
+          color = "#5BC8F0",
+          size = 5,
+          direction = "y",
+          hjust = -0.2,
+          segment.size = 0.3,
+          force = 0.5,
+          max.overlaps = 20
+        ) +
+        geom_text_repel(
+          data = filteredData_eFUA() %>% filter(Year == max(oe_data_shi$Year)),
           aes(x = Year, y = GDP_per_capita_PPP, label = Location),
           color = "#cd402a",
           size = 5,
@@ -227,8 +292,8 @@ server <- function(input, output, session) {
   })
 
   # Plot Output for Employment Structure with selected and comparator eFUAs
-  output$employmentPlot_eUFA <- renderPlot({
-    if (input$sidebarMenu == "eUFA" && input$section == "Employment structure") {
+  output$employmentPlot_eFUA <- renderPlot({
+    if (input$sidebarMenu == "eFUA" && input$section == "Employment structure") {
       columns_to_pivot_Emp_Pct <- c(
         "Public_Services_Emp_Pct",
         "Industry_Emp_Pct",
@@ -238,8 +303,8 @@ server <- function(input, output, session) {
         "Transport_Information_Communic_Services_Emp_Pct"
       )
   
-      selected_city_data <- filteredDataByYear_eUFA()
-      comparator_data <- comparisonGroupDataByYear_eUFA()
+      selected_city_data <- filteredDataByYear_eFUA()
+      comparator_data <- comparisonGroupDataByYear_eFUA()
   
       plot_data_list <- list(
         selected = selected_city_data,
@@ -248,7 +313,7 @@ server <- function(input, output, session) {
       
       combined_data <- selected_city_data %>%
         bind_rows(comparator_data) %>%
-        filter(Location == input$location | Location %in% input$comparators_eUFA) %>%
+       filter(Location == input$location | Location %in% input$comparators_eUFA | Location %in% input$aspirational_eFUA) %>%
         pivot_longer(
           cols = all_of(columns_to_pivot_Emp_Pct),
           names_to = "Employment_sector",
