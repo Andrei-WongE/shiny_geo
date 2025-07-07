@@ -94,6 +94,7 @@ ui <- dashboardPage(
       "))
     ),
     tabItems(
+# eFUA tab-------------------------------------------------------------
       tabItem(
         tabName = "eFUA",
         sidebarLayout(
@@ -115,8 +116,18 @@ ui <- dashboardPage(
                                                            , "Composition of GVA"
                                                            , "Composition of Employment"
                                                            )
-                         )
-          ),
+                         ),
+## Conditional selection--------------------------------------------------------
+          conditionalPanel(
+      condition = "input.section == 'Composition of GVA' || input.section == 'Composition of Employment'",
+      selectInput("start_year", "Start Year:", 
+                  choices = sort(unique(oe_data_shi$Year)),
+                  selected = min(oe_data_shi$Year, na.rm = TRUE)),
+      selectInput("end_year", "End Year:", 
+                  choices = sort(unique(oe_data_shi$Year)),
+                  selected = max(oe_data_shi$Year, na.rm = TRUE))
+    )
+      ),
           mainPanel(
             width = 10,
             uiOutput("dynamicPlot"),
@@ -127,6 +138,7 @@ ui <- dashboardPage(
           )
         )
       ),
+# UrbanCetres tab-------------------------------------------------------------
       tabItem(
         tabName = "UrbanCentres",
         sidebarLayout(
@@ -207,12 +219,12 @@ server <- function(input, output, session) {
         plotOutput("employmentPlot_eFUA", height = "auto", width = "100%")
         
       } else if (input$section == "Composition of GVA") {
-        plotOutput("gvaCompositionPlot_eFUA", height = "1200px"
+        plotOutput("gvaCompositionPlot_eFUA", height = "1300px"
                    # , width = "100%"
                    )
         
       } else if (input$section == "Composition of Employment") {
-        plotOutput("empCompositionPlot_eFUA", height = "1200px"
+        plotOutput("empCompositionPlot_eFUA", height = "1300px"
                    # , width = "100%"
                    )
       }
@@ -238,6 +250,40 @@ server <- function(input, output, session) {
     req(input$comparators_Urban)
     built_ucdb %>%
       filter(Urban_centre %in% input$comparators_Urban & !is.na(Built_rel_change))
+  })
+  
+    # Year validation for conditional panel
+  observe({
+    if (!is.null(input$start_year) && !is.null(input$end_year)) {
+      if (input$start_year > input$end_year) {
+        updateSelectInput(session, "end_year", selected = input$start_year)
+      }
+    }
+  })
+  
+  # Filtered data with year range
+  filteredDataYearRange_eFUA <- reactive({
+    req(input$location, input$start_year, input$end_year)
+    oe_data_shi %>%
+      filter(Location == input$location, 
+             Year >= input$start_year, 
+             Year <= input$end_year)
+  })
+  
+  comparisonGroupDataYearRange_eFUA <- reactive({
+    req(input$comparators_eFUA, input$start_year, input$end_year)
+    oe_data_shi %>%
+      filter(Location %in% input$comparators_eFUA,
+             Year >= input$start_year, 
+             Year <= input$end_year)
+  })
+  
+  aspirationalGroupDataYearRange_eFUA <- reactive({
+    req(input$aspirational_eFUA, input$start_year, input$end_year)
+    oe_data_shi %>%
+      filter(Location %in% input$aspirational_eFUA,
+             Year >= input$start_year, 
+             Year <= input$end_year)
   })
 
   # eFUA -----------------------------------------------------------------------
@@ -504,7 +550,7 @@ server <- function(input, output, session) {
     geom_text(
       data = label_data %>% filter(Year == min(Year) | Year == max(Year)),
       aes(x = Year, y = pos, label = perc, hjust = ifelse(Year == min(Year), 1.1, -0.1)),
-      size = 5, fontface = "bold"
+      size = 7, fontface = "bold"
     ) +
     geom_segment(
       data = label_data %>% filter(Year == min(Year) | Year == max(Year)),
@@ -520,11 +566,12 @@ server <- function(input, output, session) {
     ) +
     theme_minimal() +
     theme(
-      plot.title = element_text(size = 14, face = "bold", color = color),
-      axis.text.x = element_text(angle = 45, hjust = 1, size = 10, face = "bold"),
+      plot.title = element_text(size = 12, face = "bold", color = color),
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 14, face = "bold"),
+      strip.text = element_text(size = 14, face = "bold"), # Add this line
       legend.position = "bottom",
       legend.title = element_blank(),
-      plot.caption = element_text(size = 8, hjust = 0, margin = margin(t = 20)
+      plot.caption = element_text(size = 12, hjust = 0, margin = margin(t = 20)
                                   , color = "gray30")
     )
 }
@@ -536,7 +583,7 @@ server <- function(input, output, session) {
       
       # Main city plot
       if (!is.null(input$location) && input$location != "") {
-        main_data <- filteredData_eFUA()
+        main_data <- filteredDataYearRange_eFUA()
         if (nrow(main_data) > 0) {
           plot_list[[length(plot_list) + 1]] <- create_sector_plot(main_data, 
                                               var_type = "GVA", 
@@ -547,7 +594,7 @@ server <- function(input, output, session) {
       
       # Comparison cities plot
       if (!is.null(input$comparators_eFUA) && length(input$comparators_eFUA) > 0) {
-        comparison_data <- comparisonGroupData_eFUA()
+        comparison_data <- comparisonGroupDataYearRange_eFUA()
         if (nrow(comparison_data) > 0) {
           plot_list[[length(plot_list) + 1]] <- create_sector_plot(comparison_data,
                                                 var_type = "GVA",
@@ -558,7 +605,7 @@ server <- function(input, output, session) {
       
       # Aspirational cities plot
       if (!is.null(input$aspirational_eFUA) && length(input$aspirational_eFUA) > 0) {
-        aspirational_data <- aspirationalGroupData_eFUA()
+        aspirational_data <- aspirationalGroupDataYearRange_eFUA()
         if (nrow(aspirational_data) > 0) {
           plot_list[[length(plot_list) + 1]] <- create_sector_plot(aspirational_data,
                                                                  var_type = "GVA",
@@ -583,7 +630,7 @@ server <- function(input, output, session) {
       
       # Main city plot
       if (!is.null(input$location) && input$location != "") {
-        main_data <- filteredData_eFUA()
+        main_data <- filteredDataYearRange_eFUA()
         if (nrow(main_data) > 0) {
           plot_list[[length(plot_list) + 1]] <- create_sector_plot(main_data, 
                                               var_type = "EMP", 
@@ -594,7 +641,7 @@ server <- function(input, output, session) {
       
       # Comparison cities plot
       if (!is.null(input$comparators_eFUA) && length(input$comparators_eFUA) > 0) {
-        comparison_data <- comparisonGroupData_eFUA()
+        comparison_data <- comparisonGroupDataYearRange_eFUA()
         if (nrow(comparison_data) > 0) {
           plot_list[[length(plot_list) + 1]] <- create_sector_plot(comparison_data,
                                                 var_type = "EMP",
@@ -605,7 +652,7 @@ server <- function(input, output, session) {
       
       # Aspirational cities plot
       if (!is.null(input$aspirational_eFUA) && length(input$aspirational_eFUA) > 0) {
-        aspirational_data <- aspirationalGroupData_eFUA()
+        aspirational_data <- aspirationalGroupDataYearRange_eFUA()
         if (nrow(aspirational_data) > 0) {
           plot_list[[length(plot_list) + 1]] <- create_sector_plot(aspirational_data,
                                                                  var_type = "EMP",
@@ -694,7 +741,7 @@ server <- function(input, output, session) {
     
     ggplot(combined_data, aes(x = reorder(Urban_centre, Built_rel_change), y = Built_rel_change)) +
     geom_bar(stat = "identity", aes(fill = city_type)) +
-    scale_fill_manual(values = c("main" = "#cd402a", "comparison" = "#66a9c2", "aspirational" = "#5BC8F0")) +
+    scale_fill_manual(values = c("main" = "#cd402a", "comparison" = "#80E68A", "aspirational" = "#5BC8F0")) +
       geom_text(
         aes(label = scales::percent(Built_rel_change, scale = 100, accuracy = 0.1)),
         position = position_stack(vjust = 0.5),
@@ -726,7 +773,7 @@ server <- function(input, output, session) {
     
     ggplot(combined_data, aes(x = reorder(Urban_centre, Built_rel_change), y = Built_rel_change)) +
       geom_bar(stat = "identity", aes(fill = Urban_centre == input$urbanCentre)) +
-      scale_fill_manual(values = c("TRUE" = "#cd402a", "FALSE" = "#66a9c2")) +
+      scale_fill_manual(values = c("TRUE" = "#cd402a", "FALSE" = "#80E68A")) +
       geom_text(
         aes(label = scales::percent(Built_rel_change, scale = 100, accuracy = 0.1)),
         position = position_stack(vjust = 0.5),
