@@ -22,6 +22,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # install.packages('rsconnect')
 # install.packages(RColorBrewer)
 # install.packages(gridExtra)
+# install.packages("wesanderson")
 
 library(shiny)
 library(dplyr)
@@ -36,6 +37,8 @@ library(shinydashboard)
 library(rsconnect)
 library(RColorBrewer)
 library(gridExtra)
+library(wesanderson)
+library(stringr)
 
 # Loading data
 load(here("Data", "shiny_data.RData"))
@@ -204,12 +207,12 @@ server <- function(input, output, session) {
         plotOutput("employmentPlot_eFUA", height = "auto", width = "100%")
         
       } else if (input$section == "Composition of GVA") {
-        plotOutput("gvaCompositionPlot_eFUA", height = "600px"
+        plotOutput("gvaCompositionPlot_eFUA", height = "1200px"
                    # , width = "100%"
                    )
         
       } else if (input$section == "Composition of Employment") {
-        plotOutput("empCompositionPlot_eFUA", height = "600px"
+        plotOutput("empCompositionPlot_eFUA", height = "1200px"
                    # , width = "100%"
                    )
       }
@@ -409,7 +412,9 @@ server <- function(input, output, session) {
               legend.position = "bottom",
               # legend.title = element_blank(),
               plot.title = element_text(size = 14, face = "bold", color = color),
-              legend.text = element_text(size = 11, face = "bold")
+              legend.text = element_text(size = 12
+                                         # , face = "bold"
+                                         )
             ) +
             geom_text(aes(label = scales::percent(Percentage, accuracy = 0.1)),
               position = position_fill(vjust = 0.5), size = 5, color = "black", 
@@ -457,80 +462,107 @@ server <- function(input, output, session) {
       }
     }
   })
+
+  # Generic Plot Output for Composition---------------------------------------------
+  create_sector_plot <- function(data, var_type = "EMP", title_prefix = "", caption = "") {
+  suffix <- paste0("_", var_type, "_Pct")
+  
+  plot_data <- data %>%
+    select(Year, Location, ends_with(suffix)) %>%
+    pivot_longer(
+      cols = ends_with(suffix),
+      names_to = "Sector",
+      values_to = "Percentage"
+    ) %>%
+    mutate(
+      Sector = str_remove(Sector, suffix),
+      Sector = str_replace_all(Sector, "_", " "),
+      Year = as.numeric(Year)
+    )
+
+  label_data <- plot_data %>%
+    group_by(Location, Year) %>%
+    arrange(Year, desc(Sector)) %>%
+    mutate(
+      ymax = cumsum(Percentage),
+      ymin = lag(ymax, default = 0),
+      pos = ymin + (Percentage / 2),
+      perc = scales::percent(Percentage, accuracy = 0.1)
+    ) %>%
+    ungroup()
+
+  title_text <- paste(title_prefix, "(", min(plot_data$Year), "-", max(plot_data$Year), ")")
+
+  ggplot(plot_data, aes(x = Year, y = Percentage, fill = Sector)) +
+    geom_area(position = "fill", alpha = 0.8) +
+    facet_wrap(~Location) +
+    scale_fill_manual(values = wes_palette("Zissou1", 
+                                           n = length(unique(plot_data$Sector)), 
+                                           type = "continuous")) +
+    scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
+    scale_x_continuous(breaks = unique(plot_data$Year)) +
+    geom_text(
+      data = label_data %>% filter(Year == min(Year) | Year == max(Year)),
+      aes(x = Year, y = pos, label = perc, hjust = ifelse(Year == min(Year), 1.1, -0.1)),
+      size = 5, fontface = "bold"
+    ) +
+    geom_segment(
+      data = label_data %>% filter(Year == min(Year) | Year == max(Year)),
+      aes(x = Year, xend = Year, y = pos, yend = ymin),
+      linetype = "dotted", color = "gray50"
+    ) +
+    labs(
+      title = title_text,
+      x = NULL,
+      y = "Percentage",
+      fill = "Sector",
+      caption = caption
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(size = 14, face = "bold"),
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 10, face = "bold"),
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      plot.caption = element_text(size = 8, hjust = 0, margin = margin(t = 20), color = "gray30")
+    )
+}
   
   # Plot Output for GVA Composition---------------------------------------------
   output$gvaCompositionPlot_eFUA <- renderPlot({
     if (input$sidebarMenu == "eFUA" && input$section == "Composition of GVA") {
-      columns_to_pivot_GVA <- c(
-        "Public_Services_GVA_Pct",
-        "Industry_GVA_Pct", 
-        "Financial_Business_Services_GVA_Pct",
-        "Consumer_Services_GVA_Pct",
-        "Agriculture_GVA_Pct",
-        "Transport_Information_Communic_Services_GVA_Pct"
-      )
-  
       plot_list <- list()
-      
-      # Function to create GVA composition plot
-      create_gva_plot <- function(data, title, color) {
-        if (nrow(data) > 0) {
-          plot_data <- data %>%
-            pivot_longer(
-              cols = all_of(columns_to_pivot_GVA),
-              names_to = "GVA_sector",
-              values_to = "Percentage"
-            ) %>%
-            mutate(GVA_sector = gsub("(_GVA_Pct|_)", " ", GVA_sector))
-          
-          ggplot(plot_data, aes(x = Location, y = Percentage, fill = GVA_sector)) +
-            geom_bar(stat = "identity", position = "fill", alpha = 0.8) +
-            scale_fill_manual(values = RColorBrewer::brewer.pal(min(length(unique(plot_data$GVA_sector)), 11), "Set3")) +
-            labs(title = title, x = NULL, y = "Percentage", fill = "GVA Sector") +
-            theme_minimal() +
-            scale_y_continuous(labels = scales::percent_format()) +
-            theme(
-              axis.text.x = element_text(angle = 0, hjust = 1, vjust = 0.5, size = 11
-                                         , face = "bold"),
-              legend.position = "bottom",
-              # legend.title = element_blank(),
-              plot.title = element_text(size = 12, face = "bold", color = color),
-              legend.text = element_text(size = 8)
-            ) +
-            geom_text(aes(label = scales::percent(Percentage, accuracy = 0.1)),
-              position = position_fill(vjust = 0.5), size = 3, color = "black", 
-              fontface = "bold"
-            )
-        }
-      }
       
       # Main city plot
       if (!is.null(input$location) && input$location != "") {
-        main_data <- filteredDataByYear_eFUA()
+        main_data <- filteredData_eFUA()
         if (nrow(main_data) > 0) {
-          plot_list[[length(plot_list) + 1]] <- create_gva_plot(main_data, 
-                                              paste("Main City:", input$location),
-                                              "#cd402a")
+          plot_list[[length(plot_list) + 1]] <- create_sector_plot(main_data, 
+                                              var_type = "GVA", 
+                                              title_prefix = paste("Main City:", input$location),
+                                              caption = "")
         }
       }
       
       # Comparison cities plot
       if (!is.null(input$comparators_eFUA) && length(input$comparators_eFUA) > 0) {
-        comparison_data <- comparisonGroupDataByYear_eFUA()
+        comparison_data <- comparisonGroupData_eFUA()
         if (nrow(comparison_data) > 0) {
-          plot_list[[length(plot_list) + 1]] <- create_gva_plot(comparison_data,
-                                                "Comparison Cities",
-                                                "#80E68A")
+          plot_list[[length(plot_list) + 1]] <- create_sector_plot(comparison_data,
+                                                var_type = "GVA",
+                                                title_prefix = "Comparison Cities",
+                                                caption = "")
         }
       }
       
       # Aspirational cities plot
       if (!is.null(input$aspirational_eFUA) && length(input$aspirational_eFUA) > 0) {
-        aspirational_data <- aspirationalGroupDataByYear_eFUA()
+        aspirational_data <- aspirationalGroupData_eFUA()
         if (nrow(aspirational_data) > 0) {
-          plot_list[[length(plot_list) + 1]] <- create_gva_plot(aspirational_data,
-                                                                 "Aspirational Cities",
-                                                                 "#5BC8F0")
+          plot_list[[length(plot_list) + 1]] <- create_sector_plot(aspirational_data,
+                                                                 var_type = "GVA",
+                                                                 title_prefix = "Aspirational Cities",
+                                                                 caption = "")
         }
       }
       
@@ -545,76 +577,38 @@ server <- function(input, output, session) {
   # Plot Output for Employment Composition--------------------------------------
   output$empCompositionPlot_eFUA <- renderPlot({
     if (input$sidebarMenu == "eFUA" && input$section == "Composition of Employment") {
-      columns_to_pivot_Emp <- c(
-        "Public_Services_Emp_Pct",
-        "Industry_Emp_Pct",
-        "Financial_Busines_Services_Emp_Pct", 
-        "Consumer_Services_Emp_Pct",
-        "Agriculture_Emp_Pct",
-        "Transport_Information_Communic_Services_Emp_Pct"
-      )
-  
       plot_list <- list()
-      
-      # Function to create employment composition plot (stacked bars)
-      create_emp_composition_plot <- function(data, title, color) {
-        if (nrow(data) > 0) {
-          plot_data <- data %>%
-            pivot_longer(
-              cols = all_of(columns_to_pivot_Emp),
-              names_to = "Employment_sector",
-              values_to = "Percentage"
-            ) %>%
-            mutate(Employment_sector = gsub("(_Emp_Pct|_)", " ", Employment_sector))
-          
-          ggplot(plot_data, aes(x = Location, y = Percentage, fill = Employment_sector)) +
-            geom_bar(stat = "identity", position = position_dodge(width = 0.9), alpha = 0.8) +
-            scale_fill_manual(values = RColorBrewer::brewer.pal(min(length(unique(plot_data$Employment_sector)), 11), "Spectral")) +
-            labs(title = title, x = NULL, y = "Percentage", fill = "Employment Sector") +
-            theme_minimal() +
-            scale_y_continuous(labels = scales::percent_format()) +
-            theme(
-              axis.text.x = element_text(angle = 0, hjust = 1, vjust = 0.5, size = 11
-                                         , face = "bold"),
-              legend.position = "bottom",
-              # legend.title = element_blank(),
-              plot.title = element_text(size = 12, face = "bold", color = color),
-              legend.text = element_text(size = 8)
-            ) +
-            geom_text(aes(label = scales::percent(Percentage, accuracy = 0.1)),
-              position = position_dodge(width = 0.9), vjust = -0.5, size = 3, 
-              color = "black", fontface = "bold"
-            )
-        }
-      }
       
       # Main city plot
       if (!is.null(input$location) && input$location != "") {
-        main_data <- filteredDataByYear_eFUA()
+        main_data <- filteredData_eFUA()
         if (nrow(main_data) > 0) {
-          plot_list[[length(plot_list) + 1]] <- create_emp_composition_plot(main_data, 
-                                              paste("Main City:", input$location),
-                                              "#cd402a")
+          plot_list[[length(plot_list) + 1]] <- create_sector_plot(main_data, 
+                                              var_type = "EMP", 
+                                              title_prefix = paste("Main City:", input$location),
+                                              caption = "")
         }
       }
       
       # Comparison cities plot
       if (!is.null(input$comparators_eFUA) && length(input$comparators_eFUA) > 0) {
-        comparison_data <- comparisonGroupDataByYear_eFUA()
+        comparison_data <- comparisonGroupData_eFUA()
         if (nrow(comparison_data) > 0) {
-          plot_list[[length(plot_list) + 1]] <- create_emp_composition_plot(comparison_data,
-                                                "Comparison Cities",
-                                                "#80E68A")
+          plot_list[[length(plot_list) + 1]] <- create_sector_plot(comparison_data,
+                                                var_type = "EMP",
+                                                title_prefix = "Comparison Cities",
+                                                caption = "")
         }
       }
       
       # Aspirational cities plot
       if (!is.null(input$aspirational_eFUA) && length(input$aspirational_eFUA) > 0) {
-        aspirational_data <- aspirationalGroupDataByYear_eFUA()
+        aspirational_data <- aspirationalGroupData_eFUA()
         if (nrow(aspirational_data) > 0) {
-          plot_list[[length(plot_list) + 1]] <- create_emp_composition_plot(aspirational_data,
-                                                                 "Aspirational Cities",
-                                                                 "#5BC8F0")
+          plot_list[[length(plot_list) + 1]] <- create_sector_plot(aspirational_data,
+                                                                 var_type = "EMP",
+                                                                 title_prefix = "Aspirational Cities",
+                                                                 caption = "")
         }
       }
       
@@ -625,7 +619,6 @@ server <- function(input, output, session) {
       }
     }
   })
-    
   # Urban Centres ---------------------------------------------------------------
   output$urbanOutput <- renderUI({
     if (!is.null(input$urbanCentre) && input$urbanCentre != "") {
