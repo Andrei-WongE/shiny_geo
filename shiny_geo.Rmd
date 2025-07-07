@@ -464,7 +464,7 @@ server <- function(input, output, session) {
   })
 
   # Generic Plot Output for Composition---------------------------------------------
-  create_sector_plot <- function(data, var_type = "EMP", title_prefix = "", caption = "") {
+  create_sector_plot <- function(data, var_type = "EMP", title_prefix = "", caption = "", color = "grey")  {
   suffix <- paste0("_", var_type, "_Pct")
   
   plot_data <- data %>%
@@ -520,11 +520,12 @@ server <- function(input, output, session) {
     ) +
     theme_minimal() +
     theme(
-      plot.title = element_text(size = 14, face = "bold"),
+      plot.title = element_text(size = 14, face = "bold", color = color),
       axis.text.x = element_text(angle = 45, hjust = 1, size = 10, face = "bold"),
       legend.position = "bottom",
       legend.title = element_blank(),
-      plot.caption = element_text(size = 8, hjust = 0, margin = margin(t = 20), color = "gray30")
+      plot.caption = element_text(size = 8, hjust = 0, margin = margin(t = 20)
+                                  , color = "gray30")
     )
 }
   
@@ -540,7 +541,7 @@ server <- function(input, output, session) {
           plot_list[[length(plot_list) + 1]] <- create_sector_plot(main_data, 
                                               var_type = "GVA", 
                                               title_prefix = paste("Main City:", input$location),
-                                              caption = "")
+                                              caption = "", color = "#cd402a")
         }
       }
       
@@ -551,7 +552,7 @@ server <- function(input, output, session) {
           plot_list[[length(plot_list) + 1]] <- create_sector_plot(comparison_data,
                                                 var_type = "GVA",
                                                 title_prefix = "Comparison Cities",
-                                                caption = "")
+                                                caption = "", color ="#80E68A")
         }
       }
       
@@ -562,7 +563,8 @@ server <- function(input, output, session) {
           plot_list[[length(plot_list) + 1]] <- create_sector_plot(aspirational_data,
                                                                  var_type = "GVA",
                                                                  title_prefix = "Aspirational Cities",
-                                                                 caption = "")
+                                                                 caption = "",
+                                                                color = "#5BC8F0")
         }
       }
       
@@ -586,7 +588,7 @@ server <- function(input, output, session) {
           plot_list[[length(plot_list) + 1]] <- create_sector_plot(main_data, 
                                               var_type = "EMP", 
                                               title_prefix = paste("Main City:", input$location),
-                                              caption = "")
+                                              caption = "", color = "#cd402a")
         }
       }
       
@@ -597,7 +599,7 @@ server <- function(input, output, session) {
           plot_list[[length(plot_list) + 1]] <- create_sector_plot(comparison_data,
                                                 var_type = "EMP",
                                                 title_prefix = "Comparison Cities",
-                                                caption = "")
+                                                caption = "", color ="#80E68A")
         }
       }
       
@@ -608,7 +610,8 @@ server <- function(input, output, session) {
           plot_list[[length(plot_list) + 1]] <- create_sector_plot(aspirational_data,
                                                                  var_type = "EMP",
                                                                  title_prefix = "Aspirational Cities",
-                                                                 caption = "")
+                                                                 caption = "",
+                                                                color = "#5BC8F0")
         }
       }
       
