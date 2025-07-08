@@ -6,4 +6,4 @@ Future versions will expand to include additional variables and datasets, as wel
 
 [🎬 Watch the demo](https://github.com/Andrei-WongE/shiny_geo/releases/tag/1.0-Beta)
 
-[!Shiny_image](Shiny_2025-07-08.png)
+![Shiny_image](Shiny_2025-07-08.png)
