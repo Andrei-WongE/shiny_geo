@@ -21,7 +21,7 @@ Future versions will expand to include additional variables and datasets, as wel
 ## Installation and Setup
 
 1. **Clone the repository using Rstudio**
-
+   - Open RStudio and introduce in the termnial the following code:
    ```bash
    git clone https://github.com/Andrei-WongE/shiny_geo.git
    ```
