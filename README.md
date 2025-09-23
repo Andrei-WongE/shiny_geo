@@ -32,7 +32,7 @@ Future versions will expand to include additional variables and datasets, as wel
    - Select `shiny_geo.Rproj`.
 
 
-3. **Obtain the databhases from app manager**
+3. **Obtain the databases from app manager**
    - Contact me via WB email.
    - I will email the required databases for the app.
    - Place the downloaded files in the `Data` folder within the cloned repository. 
