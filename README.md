@@ -26,11 +26,21 @@ Future versions will expand to include additional variables and datasets, as wel
    git clone https://github.com/Andrei-WongE/shiny_geo.git
    ```
 
-2. **Open in RStudio**
+2. **Open file with code in RStudio**
    - Go to File → Open Project.
    - Navigate to the cloned `shiny_geo` folder.
    - Select `shiny_geo.Rproj`.
 
+
+3. **Obtain the databhases from app manager**
+   - Contact me via WB email.
+   - I will email the required databases for the app.
+   - Place the downloaded files in the `Data` folder within the cloned repository. 
+     If there is no `Data` folder, create one using the following code in the terminal:
+     
+   ```bash  
+   mkdir Data
+   ```
 
 ## Running the App
 
