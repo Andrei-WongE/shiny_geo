@@ -7,38 +7,31 @@ runtime: shiny
 ---
 
 ```{r setup, include=FALSE}
+if (!require("pacman", quietly = TRUE)) {
+  install.packages("pacman")
+}
+
+library(pacman)
+
+p_load(
+  shiny,
+  dplyr,
+  ggplot2,
+  here,
+  tidyr,
+  ggrepel,
+  wesanderson,
+  DT,
+  scales,
+  shinydashboard,
+  rsconnect,
+  RColorBrewer,
+  gridExtra,
+  stringr
+)
+
+
 knitr::opts_chunk$set(echo = TRUE)
-
-# install.packages("shiny")
-# install.packages("dplyr")
-# install.packages("ggplot2")
-# install.packages("here")
-# install.packages("tidyr")
-# install.packages("ggrepel")
-# install.packages("wesanderson")
-# install.packages("DT")
-# install.packages("scales")
-# install.packages("shinydashboard")
-# install.packages('rsconnect')
-# install.packages(RColorBrewer)
-# install.packages(gridExtra)
-# install.packages("wesanderson")
-
-library(shiny)
-library(dplyr)
-library(ggplot2)
-library(here)
-library(tidyr)
-library(ggrepel)
-library(wesanderson)
-library(DT)
-library(scales)
-library(shinydashboard)
-library(rsconnect)
-library(RColorBrewer)
-library(gridExtra)
-library(wesanderson)
-library(stringr)
 
 # Loading data
 load(here("Data", "shiny_data.RData"))

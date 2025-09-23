@@ -1,28 +1,25 @@
+if (!require("pacman", quietly = TRUE)) {
+  install.packages("pacman")
+}
 
+library(pacman)
 
-# install.packages("shiny")
-# install.packages("dplyr")
-# install.packages("ggplot2")
-# install.packages("here")
-# install.packages("tidyr")
-# install.packages("ggrepel")
-# install.packages("wesanderson")
-# install.packages("DT")
-# install.packages("scales")
-# install.packages("shinydashboard")
-# install.packages('rsconnect')
-
-library(shiny)
-library(dplyr)
-library(ggplot2)
-library(here)
-library(tidyr)
-library(ggrepel)
-library(wesanderson)
-library(DT)
-library(scales)
-library(shinydashboard)
-library(rsconnect)
+p_load(
+  shiny,
+  dplyr,
+  ggplot2,
+  here,
+  tidyr,
+  ggrepel,
+  wesanderson,
+  DT,
+  scales,
+  shinydashboard,
+  rsconnect,
+  RColorBrewer,
+  gridExtra,
+  stringr
+)
 
 # Loading data
 load(here("Data", "shiny_data.RData"))
@@ -38,193 +35,622 @@ ui <- dashboardPage(
   dashboardSidebar(
     sidebarMenu(
       id = "sidebarMenu",
-      menuItem("eUFA", tabName = "eUFA", icon = icon("chart-bar")),
+      menuItem("eFUA", tabName = "eFUA", icon = icon("chart-bar")),
       menuItem("Urban Centres", tabName = "UrbanCentres", icon = icon("city"))
     )
   ),
   dashboardBody(
+    # Added custom CSS styling
+    tags$head(
+      tags$style(HTML("
+        .main-city .selectize-input .item {
+          background-color: #cd402a !important;
+          color: white !important;
+        }
+        
+         #employmentPlot_eFUA {
+          height: calc(100vh - 150px) !important;
+          width: 100% !important;
+        }
+        
+        .content-wrapper {
+          height: 100vh !important;
+        }
+            
+        .comparison-cities .selectize-input .item {
+          background-color: #80E68A !important;
+          color: black !important;
+        }
+        
+        .aspirational-cities .selectize-input .item {
+          background-color: #5BC8F0 !important;
+          color: black !important;
+        }
+        
+        .urban-comparison .selectize-input .item {
+          background-color: #66a9c2 !important;
+          color: white !important;
+        }
+      "))
+    ),
     tabItems(
-      tabItem(tabName = "eUFA",
-              sidebarLayout(
-                sidebarPanel(width = 2,
-                             selectInput("year", "Select Year:", choices = unique(oe_data_shi$Year)),
-                             selectInput("location", "Select City:", choices = unique(oe_data_shi$Location)),
-                             selectInput("region2", "Select Comparison Group:", choices = unique(oe_data_shi$Region2), selected = "MENA"),
-                             radioButtons("section", "Select:", choices = c("GDP per capita (PPP)", "Employment structure"))
-                ),
-                mainPanel(width = 10,
-                          uiOutput("dynamicPlot"),
-                          DT::dataTableOutput("dataTable")
-                )
-              )
+      # eFUA tab-------------------------------------------------------------
+      tabItem(
+        tabName = "eFUA",
+        sidebarLayout(
+          sidebarPanel(
+            width = 2,
+            selectInput("year", "Select Year:", choices = sort(unique(oe_data_shi$Year))),
+            div(class = "main-city",
+                selectInput("location", "Select Main City:", choices = sort(unique(oe_data_shi$Location)))), 
+            div(class = "comparison-cities",
+                selectInput("comparators_eFUA", "Select Comparison Cities (max. 4 cities):",
+                            choices = c("", sort(unique(oe_data_shi$Location[!grepl("^[^a-zA-Z0-9]", oe_data_shi$Location) & !is.na(oe_data_shi$GDP_per_capita_PPP)]))), 
+                            multiple = TRUE)),
+            div(class = "aspirational-cities",
+                selectInput("aspirational_eFUA", "Select Aspirational Cities (max. 4 cities):",
+                            choices = c("", sort(unique(oe_data_shi$Location[!grepl("^[^a-zA-Z0-9]", oe_data_shi$Location) & !is.na(oe_data_shi$GDP_per_capita_PPP)]))), 
+                            multiple = TRUE)),
+            radioButtons("section", "Select:", choices = c("GDP per capita (PPP)"
+                                                           , "Annual Employment Structure"
+                                                           , "Composition of GVA"
+                                                           , "Composition of Employment"
+            )
+            ),
+            ## Conditional selection--------------------------------------------------------
+            conditionalPanel(
+              condition = "input.section == 'Composition of GVA' || input.section == 'Composition of Employment'",
+              selectInput("start_year", "Start Year:", 
+                          choices = sort(unique(oe_data_shi$Year)),
+                          selected = min(oe_data_shi$Year, na.rm = TRUE)),
+              selectInput("end_year", "End Year:", 
+                          choices = sort(unique(oe_data_shi$Year)),
+                          selected = max(oe_data_shi$Year, na.rm = TRUE))
+            )
+          ),
+          mainPanel(
+            width = 10,
+            uiOutput("dynamicPlot"),
+            conditionalPanel(
+              condition = "input.section == 'GDP per capita (PPP)'",
+              DT::dataTableOutput("dataTable")
+            )
+          )
+        )
       ),
-      tabItem(tabName = "UrbanCentres",
-              sidebarLayout(
-                sidebarPanel(width = 2,
-                             h4("Select ONE of the options below:"),
-                             selectInput("urbanCentre", "Select City:", choices = c("", unique(built_ucdb$Urban_centre))),
-                             selectInput("region", "Select Region:", choices = c("", unique(built_ucdb$Region))),
-                             selectInput("country", "Select Country:", choices = c("", unique(built_ucdb$Country))),
-                             actionButton("reset", "Reset Selection")
-                ),
-                mainPanel(width = 10,
-                          uiOutput("urbanOutput"),
-                          DT::dataTableOutput("urbanDataTable")
-                )
-              )
+      # UrbanCetres tab-------------------------------------------------------------
+      tabItem(
+        tabName = "UrbanCentres",
+        sidebarLayout(
+          sidebarPanel(
+            width = 2,
+            h4("Select options below:"),
+            div(class = "main-city",
+                selectInput("urbanCentre", "Select Main City:", choices = c("", sort(unique(built_ucdb$Urban_centre[!grepl("[?]", built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", built_ucdb$Urban_centre) & !is.na(built_ucdb$Built_rel_change)]))))),
+            div(class = "urban-comparison",
+                selectInput("comparators_Urban", "Select Comparison Cities:",
+                            choices = c("", sort(unique(built_ucdb$Urban_centre[!grepl("[?]", built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", built_ucdb$Urban_centre) & !is.na(built_ucdb$Built_rel_change)]))), 
+                            multiple = TRUE)),
+            div(class = "aspirational-cities",
+                selectInput("aspirational_Urban", "Select Aspirational Cities:",
+                            choices = c("", sort(unique(built_ucdb$Urban_centre[!grepl("[?]", built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", built_ucdb$Urban_centre) & !is.na(built_ucdb$Built_rel_change)]))), 
+                            multiple = TRUE))
+          ),
+          mainPanel(
+            width = 10,
+            uiOutput("urbanOutput"),
+            DT::dataTableOutput("urbanDataTable")
+          )
+        )
       )
     )
   )
 )
-
+# Clean data labels before importing database!
 
 
 ## Server
-
 server <- function(input, output, session) {
   
+  # Server-side selectize updates, to imrpove performance by creating a select list from list of values
+  updateSelectizeInput(session, "location",
+                       choices = sort(unique(oe_data_shi$Location)),
+                       server = TRUE)
+  
+  updateSelectizeInput(session, "comparators_eFUA",
+                       choices = sort(unique(oe_data_shi$Location[!grepl("^[^a-zA-Z0-9]", 
+                                                                         oe_data_shi$Location) & !is.na(oe_data_shi$GDP_per_capita_PPP)])),
+                       server = TRUE)
+  
+  updateSelectizeInput(session, "aspirational_eFUA",
+                       choices = sort(unique(oe_data_shi$Location[!grepl("^[^a-zA-Z0-9]",
+                                                                         oe_data_shi$Location) & !is.na(oe_data_shi$GDP_per_capita_PPP)])),
+                       server = TRUE)
+  
+  updateSelectizeInput(session, "urbanCentre",
+                       choices = sort(unique(built_ucdb$Urban_centre[!grepl("[?]", 
+                                                                            built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]",
+                                                                                                              built_ucdb$Urban_centre) & !is.na(built_ucdb$Built_rel_change)])), 
+                       server = TRUE)
+  
+  updateSelectizeInput(session, "comparators_Urban",
+                       choices = sort(unique(built_ucdb$Urban_centre[!grepl("[?]", 
+                                                                            built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", 
+                                                                                                              built_ucdb$Urban_centre) & !is.na(built_ucdb$Built_rel_change)])), 
+                       server = TRUE)
+  
+  updateSelectizeInput(session, "aspirational_Urban",
+                       choices = sort(unique(built_ucdb$Urban_centre[!grepl("[?]",
+                                                                            built_ucdb$Urban_centre) & !grepl("^[^a-zA-Z0-9]", 
+                                                                                                              built_ucdb$Urban_centre) & !is.na(built_ucdb$Built_rel_change)])), 
+                       server = TRUE)
+  
+  # Dynamic Plot UI
   output$dynamicPlot <- renderUI({
-    if (input$sidebarMenu == "eUFA") {
+    if (input$sidebarMenu == "eFUA") {
       if (input$section == "GDP per capita (PPP)") {
-        plotOutput("plotOutput_eUFA")
-      } else if (input$section == "Employment structure") {
-        plotOutput("employmentPlot_eUFA")
+        plotOutput("plotOutput_eFUA")
+        
+      } else if (input$section == "Annual Employment Structure") {
+        plotOutput("employmentPlot_eFUA", height = "auto", width = "100%")
+        
+      } else if (input$section == "Composition of GVA") {
+        plotOutput("gvaCompositionPlot_eFUA", height = "1300px"
+                   # , width = "100%"
+        )
+        
+      } else if (input$section == "Composition of Employment") {
+        plotOutput("empCompositionPlot_eFUA", height = "1300px"
+                   # , width = "100%"
+        )
       }
     }
   })
   
-  filteredData_eUFA <- reactive({
+  # Validation to limit comparators_eFUA to 4
+  observe({
+    if (length(input$comparators_eFUA) > 4) {
+      updateSelectizeInput(session, "comparators_eFUA", # Updated for selectize
+                           selected = input$comparators_eFUA[1:4])
+    }
+  })
+  
+  observe({
+    if (length(input$aspirational_eFUA) > 4) {
+      updateSelectizeInput(session, "aspirational_eFUA",
+                           selected = input$aspirational_eFUA[1:4])
+    }
+  })
+  
+  urbanDatacomparators <- reactive({
+    req(input$comparators_Urban)
+    built_ucdb %>%
+      filter(Urban_centre %in% input$comparators_Urban & !is.na(Built_rel_change))
+  })
+  
+  # Year validation for conditional panel
+  observe({
+    if (!is.null(input$start_year) && !is.null(input$end_year)) {
+      if (input$start_year > input$end_year) {
+        updateSelectInput(session, "end_year", selected = input$start_year)
+      }
+    }
+  })
+  
+  # Filtered data with year range
+  filteredDataYearRange_eFUA <- reactive({
+    req(input$location, input$start_year, input$end_year)
+    oe_data_shi %>%
+      filter(Location == input$location, 
+             Year >= input$start_year, 
+             Year <= input$end_year)
+  })
+  
+  comparisonGroupDataYearRange_eFUA <- reactive({
+    req(input$comparators_eFUA, input$start_year, input$end_year)
+    oe_data_shi %>%
+      filter(Location %in% input$comparators_eFUA,
+             Year >= input$start_year, 
+             Year <= input$end_year)
+  })
+  
+  aspirationalGroupDataYearRange_eFUA <- reactive({
+    req(input$aspirational_eFUA, input$start_year, input$end_year)
+    oe_data_shi %>%
+      filter(Location %in% input$aspirational_eFUA,
+             Year >= input$start_year, 
+             Year <= input$end_year)
+  })
+  
+  # eFUA -----------------------------------------------------------------------
+  filteredData_eFUA <- reactive({
     req(input$location)
     oe_data_shi %>%
       filter(Location == input$location)
   })
   
-  filteredDataByYear_eUFA <- reactive({
+  filteredDataByYear_eFUA <- reactive({
     req(input$year, input$location)
     oe_data_shi %>%
       filter(Year == input$year & Location == input$location)
   })
   
-  comparisonGroupData_eUFA <- reactive({
-    req(input$region2)
+  comparisonGroupData_eFUA <- reactive({
+    req(input$comparators_eFUA)
     oe_data_shi %>%
-      filter(Region2 == input$region2 & Location != input$location)
+      filter(Location %in% input$comparators_eFUA)
   })
   
-  comparisonGroupDataByYear_eUFA <- reactive({
-    req(input$year, input$region2)
+  comparisonGroupDataByYear_eFUA <- reactive({
+    req(input$year, input$comparators_eFUA)
     oe_data_shi %>%
-      filter(Year == input$year & Region2 == input$region2 & Location != input$location)
+      filter(Year == input$year & Location %in% input$comparators_eFUA)
   })
   
+  aspirationalGroupData_eFUA <- reactive({
+    req(input$aspirational_eFUA)
+    oe_data_shi %>%
+      filter(Location %in% input$aspirational_eFUA)
+  })
+  
+  aspirationalGroupDataByYear_eFUA <- reactive({
+    req(input$year, input$aspirational_eFUA)
+    oe_data_shi %>%
+      filter(Year == input$year & Location %in% input$aspirational_eFUA)
+  })
+  
+  # Data Table Output for eFUA
   output$dataTable <- DT::renderDataTable({
-    if (input$sidebarMenu == "eUFA") {
-      if (input$section == "GDP per capita (PPP)") {
-        data <- filteredDataByYear_eUFA() %>%
-          select(-ends_with("Emp_Pct"))
-        
-        comparison_data <- comparisonGroupDataByYear_eUFA() %>%
-          select(-ends_with("Emp_Pct"))
-        
-        combined_data <- bind_rows(data, comparison_data)
-        combined_data <- combined_data %>%
-          mutate(GDP_per_capita_PPP = scales::comma(GDP_per_capita_PPP * 1000, accuracy = 0.1))
-        
-        datatable(combined_data)
-        
-      } else if (input$section == "Employment structure") {
-        data <- filteredDataByYear_eUFA() %>%
-          select(-ends_with("Emp_Pct"))
-        
-        comparison_data <- comparisonGroupDataByYear_eUFA() %>%
-          select(-ends_with("Emp_Pct"))
-        
-        combined_data <- bind_rows(data, comparison_data)
-        combined_data <- combined_data %>%
-          mutate(GDP_per_capita_PPP = scales::comma(GDP_per_capita_PPP * 1000, accuracy = 0.1))
-        
-        datatable(combined_data)
-      }
+    if (input$sidebarMenu == "eFUA" && input$section == "GDP per capita (PPP)") { # Only show datable in GDP per capita (PPP) section
+      data <- filteredDataByYear_eFUA() %>%
+        select(-ends_with("Emp_Pct"))
+      
+      comparison_data <- comparisonGroupDataByYear_eFUA() %>%
+        select(-ends_with("Emp_Pct"))
+      
+      aspirational_data <- aspirationalGroupDataByYear_eFUA() %>%
+        select(-ends_with("Emp_Pct"))
+      
+      combined_data <- bind_rows(data, comparison_data, aspirational_data) %>%
+        mutate(GDP_per_capita_PPP = scales::comma(GDP_per_capita_PPP * 1000,
+                                                  accuracy = 0.1))
+      
+      DT::datatable(combined_data)
     }
   })
   
-  output$plotOutput_eUFA <- renderPlot({
-    if (input$sidebarMenu == "eUFA" && input$section == "GDP per capita (PPP)") {
-      
+  # Plot Output for GDP per capita (PPP)----------------------------------------
+  output$plotOutput_eFUA <- renderPlot({
+    if (input$sidebarMenu == "eFUA" && input$section == "GDP per capita (PPP)") {
       ggplot() +
-        geom_line(data = comparisonGroupData_eUFA(), 
-                  aes(x = Year, y = GDP_per_capita_PPP, group = Location), 
-                  color = "gray80", 
-                  alpha = 0.6) +
-        geom_line(data = filteredData_eUFA(), 
-                  aes(x = Year, y = GDP_per_capita_PPP, group = Location), 
-                  color = "red", 
-                  linewidth = 1.2) +
-        geom_text_repel(data = comparisonGroupData_eUFA() %>% filter(Year == max(oe_data_shi$Year)),
-                        aes(x = Year, y = GDP_per_capita_PPP, label = Location),
-                        color = "gray40",
-                        size = 3,
-                        direction = "y",
-                        hjust = -0.2,
-                        segment.size = 0.3,
-                        force = 0.5,
-                        max.overlaps = 20) + 
-        geom_text_repel(data = filteredData_eUFA() %>% filter(Year == max(oe_data_shi$Year)),
-                        aes(x = Year, y = GDP_per_capita_PPP, label = Location),
-                        color = "red",
-                        size = 5,
-                        fontface = "bold",
-                        direction = "y",
-                        hjust = -0.9,  # Push farther
-                        segment.size = 0.5,
-                        force = 0.5,
-                        max.overlaps = 20) + 
-        labs(title = "GDP per Capita PPP over Years",
-             x = "Year", 
-             y = "GDP per Capita PPP") +
-        scale_y_continuous(breaks = scales::pretty_breaks(n = 10),  
-                           labels = scales::label_number(scale = 1, suffix = "K")) +       
+        geom_line(
+          data = comparisonGroupData_eFUA(),
+          aes(x = Year, y = GDP_per_capita_PPP, group = Location),
+          color = "#80E68A",
+          linewidth = 1.5,  
+          alpha = 0.6
+        ) +
+        geom_line(
+          data = aspirationalGroupData_eFUA(),
+          aes(x = Year, y = GDP_per_capita_PPP, group = Location),
+          color = "#5BC8F0",
+          linewidth = 1.5,
+          alpha = 0.6
+        ) +
+        geom_line(
+          data = filteredData_eFUA(),
+          aes(x = Year, y = GDP_per_capita_PPP, group = Location),
+          color = "#cd402a",
+          linewidth = 1.2
+        ) +
+        geom_text_repel(
+          data = comparisonGroupData_eFUA() %>% filter(Year == max(oe_data_shi$Year)),
+          aes(x = Year, y = GDP_per_capita_PPP, label = Location),
+          color = "#80E68A",
+          size = 5,
+          fontface = "bold",
+          direction = "y",
+          hjust = -0.2,
+          segment.size = 0.3,
+          force = 0.5,
+          max.overlaps = 20
+        ) +
+        geom_text_repel(
+          data = aspirationalGroupData_eFUA() %>% filter(Year == max(oe_data_shi$Year)),
+          aes(x = Year, y = GDP_per_capita_PPP, label = Location),
+          color = "#5BC8F0",
+          size = 5,
+          fontface = "bold",
+          direction = "y",
+          hjust = -0.2,
+          segment.size = 0.3,
+          force = 0.5,
+          max.overlaps = 20
+        ) +
+        geom_text_repel(
+          data = filteredData_eFUA() %>% filter(Year == max(oe_data_shi$Year)),
+          aes(x = Year, y = GDP_per_capita_PPP, label = Location),
+          color = "#cd402a",
+          size = 5,
+          fontface = "bold",
+          direction = "y",
+          hjust = -0.9,
+          segment.size = 0.5,
+          force = 0.5,
+          max.overlaps = 20
+        ) +
+        labs(
+          title = "GDP per Capita PPP over Years",
+          x = "Year",
+          y = "GDP per Capita PPP"
+        ) +
+        scale_y_continuous(
+          breaks = scales::pretty_breaks(n = 10),
+          labels = scales::label_number(scale = 1, suffix = "K")
+        ) +
         theme_minimal() +
-        theme(legend.position = "none",
-              axis.text.y = element_text(size = 10),
-              axis.ticks.y = element_line(linewidth = 0.5)
+        theme(
+          legend.position = "none",
+          axis.text.y = element_text(size = 10),
+          axis.ticks.y = element_line(linewidth = 0.5)
         )
     }
   })
   
-  output$employmentPlot_eUFA <- renderPlot({
-    if (input$sidebarMenu == "eUFA" && input$section == "Employment structure") {
-      columns_to_pivot_Emp_Pct <- c("Public_Services_Emp_Pct",
-                                    "Industry_Emp_Pct",
-                                    "Financial_Busines_Services_Emp_Pct",
-                                    "Consumer_Services_Emp_Pct",
-                                    "Agriculture_Emp_Pct",
-                                    "Transport_Information_Communic_Services_Emp_Pct")
+  # Plot Output for Employment Structure with selected and comparator eFUAs-----
+  output$employmentPlot_eFUA <- renderPlot({
+    if (input$sidebarMenu == "eFUA" && input$section == "Annual Employment Structure") {
+      columns_to_pivot_Emp_Pct <- c(
+        "Public_Services_Emp_Pct",
+        "Industry_Emp_Pct",
+        "Financial_Busines_Services_Emp_Pct",
+        "Consumer_Services_Emp_Pct",
+        "Agriculture_Emp_Pct",
+        "Transport_Information_Communic_Services_Emp_Pct"
+      )
       
-      pie_data3 <- filteredDataByYear_eUFA() %>%
-        pivot_longer(cols = all_of(columns_to_pivot_Emp_Pct), names_to = "Employment_sector", values_to = "Percentage") %>%
-        mutate(Employment_sector = gsub("(_Emp_Pct|_)", " ", Employment_sector))
+      plot_list <- list()
       
-      ggplot(pie_data3, aes(x = Location, y = Percentage, fill = Employment_sector)) +
-        geom_bar(stat = "identity", position = "fill") +
-        scale_fill_manual(values = wes_palette("Zissou1", n = length(unique(pie_data3$Employment_sector)), type = "continuous")) + 
-        labs(title = paste("Employment Sector Contribution, ", input$location),
-             x = "Location") +
-        theme_minimal() +
-        scale_y_continuous(labels = scales::percent_format(), name = NULL) + 
-        scale_x_discrete(name = NULL, breaks = NULL) + 
-        theme(legend.title = element_blank(), legend.text = element_text(size = 11)) +
-        geom_text(aes(label = scales::percent(Percentage, accuracy = 0.1)),
-                  position = position_fill(vjust = 0.5), size = 4)
+      # Function to create dynamically employment plot for selected cities
+      create_employment_plot <- function(data, title, color) {
+        if (nrow(data) > 0) {
+          plot_data <- data %>%
+            pivot_longer(
+              cols = all_of(columns_to_pivot_Emp_Pct),
+              names_to = "Employment_sector",
+              values_to = "Percentage"
+            ) %>%
+            mutate(Employment_sector = gsub("(_Emp_Pct|_)", " ", Employment_sector))
+          
+          ggplot(plot_data, aes(x = Location, y = Percentage, fill = Employment_sector)) +
+            geom_bar(stat = "identity", position = "fill") +
+            scale_fill_manual(values = RColorBrewer::brewer.pal(min(length(unique(plot_data$Employment_sector)), 11), "Set3")) +
+            labs(title = title, x = NULL, y = "Percentage", fill = NULL) +
+            theme_minimal() +
+            scale_y_continuous(labels = scales::percent_format()) +
+            theme(
+              axis.text.x = element_text(angle = 0, hjust = 1, vjust = 0.5, size = 11
+                                         , face = "bold"),
+              legend.position = "bottom",
+              # legend.title = element_blank(),
+              plot.title = element_text(size = 14, face = "bold", color = color),
+              legend.text = element_text(size = 12
+                                         # , face = "bold"
+              )
+            ) +
+            geom_text(aes(label = scales::percent(Percentage, accuracy = 0.1)),
+                      position = position_fill(vjust = 0.5), size = 5, color = "black", 
+                      fontface = "bold"
+            )
+        }
+      }
+      
+      # Main city plot
+      if (!is.null(input$location) && input$location != "") {
+        main_data <- filteredDataByYear_eFUA()
+        if (nrow(main_data) > 0) {
+          plot_list[[length(plot_list) + 1]] <- create_employment_plot(main_data, 
+                                                                       paste("Main City:", input$location),
+                                                                       "#cd402a")
+        }
+      }
+      
+      # Comparison cities plot
+      if (!is.null(input$comparators_eFUA) && length(input$comparators_eFUA) > 0) {
+        comparison_data <- comparisonGroupDataByYear_eFUA()
+        if (nrow(comparison_data) > 0) {
+          plot_list[[length(plot_list) + 1]] <- create_employment_plot(comparison_data,
+                                                                       "Comparison Cities",
+                                                                       "#80E68A")
+        }
+      }
+      
+      # Aspirational cities plot
+      if (!is.null(input$aspirational_eFUA) && length(input$aspirational_eFUA) > 0) {
+        aspirational_data <- aspirationalGroupDataByYear_eFUA()
+        if (nrow(aspirational_data) > 0) {
+          plot_list[[length(plot_list) + 1]] <- create_employment_plot(aspirational_data,
+                                                                       "Aspirational Cities",
+                                                                       "#5BC8F0")
+        }
+      }
+      
+      # Arrange plots dynamically
+      if (length(plot_list) > 0) {
+        do.call(gridExtra::grid.arrange, list(grobs = plot_list, ncol = 1, 
+                                              heights = rep(1, length(plot_list))
+        )
+        )
+      }
     }
   })
   
-  # Urban Centres
+  # Generic Plot Output for Composition---------------------------------------------
+  create_sector_plot <- function(data, var_type = "EMP", title_prefix = "", caption = "", color = "grey")  {
+    suffix <- paste0("_", var_type, "_Pct")
+    
+    plot_data <- data %>%
+      select(Year, Location, ends_with(suffix)) %>%
+      pivot_longer(
+        cols = ends_with(suffix),
+        names_to = "Sector",
+        values_to = "Percentage"
+      ) %>%
+      mutate(
+        Sector = str_remove(Sector, suffix),
+        Sector = str_replace_all(Sector, "_", " "),
+        Year = as.numeric(Year)
+      )
+    
+    label_data <- plot_data %>%
+      group_by(Location, Year) %>%
+      arrange(Year, desc(Sector)) %>%
+      mutate(
+        ymax = cumsum(Percentage),
+        ymin = lag(ymax, default = 0),
+        pos = ymin + (Percentage / 2),
+        perc = scales::percent(Percentage, accuracy = 0.1)
+      ) %>%
+      ungroup()
+    
+    title_text <- paste(title_prefix, "(", min(plot_data$Year), "-", max(plot_data$Year), ")")
+    
+    ggplot(plot_data, aes(x = Year, y = Percentage, fill = Sector)) +
+      geom_area(position = "fill", alpha = 0.8) +
+      facet_wrap(~Location) +
+      scale_fill_manual(values = wes_palette("Zissou1", 
+                                             n = length(unique(plot_data$Sector)), 
+                                             type = "continuous")) +
+      scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
+      scale_x_continuous(breaks = unique(plot_data$Year)) +
+      geom_text(
+        data = label_data %>% filter(Year == min(Year) | Year == max(Year)),
+        aes(x = Year, y = pos, label = perc, hjust = ifelse(Year == min(Year), 1.1, -0.1)),
+        size = 7, fontface = "bold"
+      ) +
+      geom_segment(
+        data = label_data %>% filter(Year == min(Year) | Year == max(Year)),
+        aes(x = Year, xend = Year, y = pos, yend = ymin),
+        linetype = "dotted", color = "gray50"
+      ) +
+      labs(
+        title = title_text,
+        x = NULL,
+        y = "Percentage",
+        fill = "Sector",
+        caption = caption
+      ) +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(size = 12, face = "bold", color = color),
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 14, face = "bold"),
+        strip.text = element_text(size = 14, face = "bold"), # Add this line
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        plot.caption = element_text(size = 12, hjust = 0, margin = margin(t = 20)
+                                    , color = "gray30")
+      )
+  }
+  
+  # Plot Output for GVA Composition---------------------------------------------
+  output$gvaCompositionPlot_eFUA <- renderPlot({
+    if (input$sidebarMenu == "eFUA" && input$section == "Composition of GVA") {
+      plot_list <- list()
+      
+      # Main city plot
+      if (!is.null(input$location) && input$location != "") {
+        main_data <- filteredDataYearRange_eFUA()
+        if (nrow(main_data) > 0) {
+          plot_list[[length(plot_list) + 1]] <- create_sector_plot(main_data, 
+                                                                   var_type = "GVA", 
+                                                                   title_prefix = paste("Main City:", input$location),
+                                                                   caption = "", color = "#cd402a")
+        }
+      }
+      
+      # Comparison cities plot
+      if (!is.null(input$comparators_eFUA) && length(input$comparators_eFUA) > 0) {
+        comparison_data <- comparisonGroupDataYearRange_eFUA()
+        if (nrow(comparison_data) > 0) {
+          plot_list[[length(plot_list) + 1]] <- create_sector_plot(comparison_data,
+                                                                   var_type = "GVA",
+                                                                   title_prefix = "Comparison Cities",
+                                                                   caption = "", color ="#80E68A")
+        }
+      }
+      
+      # Aspirational cities plot
+      if (!is.null(input$aspirational_eFUA) && length(input$aspirational_eFUA) > 0) {
+        aspirational_data <- aspirationalGroupDataYearRange_eFUA()
+        if (nrow(aspirational_data) > 0) {
+          plot_list[[length(plot_list) + 1]] <- create_sector_plot(aspirational_data,
+                                                                   var_type = "GVA",
+                                                                   title_prefix = "Aspirational Cities",
+                                                                   caption = "",
+                                                                   color = "#5BC8F0")
+        }
+      }
+      
+      # Arrange plots
+      if (length(plot_list) > 0) {
+        do.call(gridExtra::grid.arrange, list(grobs = plot_list, ncol = 1, 
+                                              heights = rep(1, length(plot_list))))
+      }
+    }
+  })
+  
+  # Plot Output for Employment Composition--------------------------------------
+  output$empCompositionPlot_eFUA <- renderPlot({
+    if (input$sidebarMenu == "eFUA" && input$section == "Composition of Employment") {
+      plot_list <- list()
+      
+      # Main city plot
+      if (!is.null(input$location) && input$location != "") {
+        main_data <- filteredDataYearRange_eFUA()
+        if (nrow(main_data) > 0) {
+          plot_list[[length(plot_list) + 1]] <- create_sector_plot(main_data, 
+                                                                   var_type = "EMP", 
+                                                                   title_prefix = paste("Main City:", input$location),
+                                                                   caption = "", color = "#cd402a")
+        }
+      }
+      
+      # Comparison cities plot
+      if (!is.null(input$comparators_eFUA) && length(input$comparators_eFUA) > 0) {
+        comparison_data <- comparisonGroupDataYearRange_eFUA()
+        if (nrow(comparison_data) > 0) {
+          plot_list[[length(plot_list) + 1]] <- create_sector_plot(comparison_data,
+                                                                   var_type = "EMP",
+                                                                   title_prefix = "Comparison Cities",
+                                                                   caption = "", color ="#80E68A")
+        }
+      }
+      
+      # Aspirational cities plot
+      if (!is.null(input$aspirational_eFUA) && length(input$aspirational_eFUA) > 0) {
+        aspirational_data <- aspirationalGroupDataYearRange_eFUA()
+        if (nrow(aspirational_data) > 0) {
+          plot_list[[length(plot_list) + 1]] <- create_sector_plot(aspirational_data,
+                                                                   var_type = "EMP",
+                                                                   title_prefix = "Aspirational Cities",
+                                                                   caption = "",
+                                                                   color = "#5BC8F0")
+        }
+      }
+      
+      # Arrange plots
+      if (length(plot_list) > 0) {
+        do.call(gridExtra::grid.arrange, list(grobs = plot_list, ncol = 1, 
+                                              heights = rep(1, length(plot_list))))
+      }
+    }
+  })
+  # Urban Centres ---------------------------------------------------------------
   output$urbanOutput <- renderUI({
     if (!is.null(input$urbanCentre) && input$urbanCentre != "") {
       plotOutput("urbanPlotCity")
-    } else if (!is.null(input$region) && input$region != "") {
-      plotOutput("urbanPlotRegion")
+    } else if (!is.null(input$comparators) && input$comparators != "") {
+      plotOutput("urbanPlotcomparators")
     } else if (!is.null(input$country) && input$country != "") {
       plotOutput("urbanPlotCountry")
     }
@@ -236,98 +662,113 @@ server <- function(input, output, session) {
       filter(Urban_centre == input$urbanCentre)
   })
   
-  urbanDataRegion <- reactive({
-    req(input$region)
-    built_ucdb %>%
-      filter(Region == input$region)
-  })
-  
   urbanDataCountry <- reactive({
     req(input$country)
     built_ucdb %>%
       filter(Country == input$country)
   })
   
+  urbanDataAspirational <- reactive({
+    req(input$aspirational_Urban)
+    built_ucdb %>%
+      filter(Urban_centre %in% input$aspirational_Urban & !is.na(Built_rel_change))
+  })
+  
+  # Data Table Output for Urban Centres
   output$urbanDataTable <- DT::renderDataTable({
+    combined_data <- data.frame() 
+    
     if (!is.null(input$urbanCentre) && input$urbanCentre != "") {
       city_data <- urbanDataCity()
-      city_summary <- city_data %>%
-        filter(!is.na(Built_rel_change)) %>%
-        summarise(
-          Value = unique(Built_rel_change)
-        )
-      datatable(city_summary, options = list(pageLength = 5), rownames = FALSE)
-    } else if (!is.null(input$region) && input$region != "") {
-      region_data <- urbanDataRegion()
-      region_summary <- region_data %>%
-        filter(!is.na(Built_rel_change)) %>%
-        summarise(
-          Average = mean(Built_rel_change, na.rm = TRUE),
-          Minimum = min(Built_rel_change, na.rm = TRUE),
-          Maximum = max(Built_rel_change, na.rm = TRUE)
-        )
-      datatable(region_summary, options = list(pageLength = 5), rownames = FALSE)
-    } else if (!is.null(input$country) && input$country != "") {
-      country_data <- urbanDataCountry()
-      country_summary <- country_data %>%
-        filter(!is.na(Built_rel_change)) %>%
-        summarise(
-          Average = mean(Built_rel_change, na.rm = TRUE),
-          Minimum = min(Built_rel_change, na.rm = TRUE),
-          Maximum = max(Built_rel_change, na.rm = TRUE)
-        )
-      datatable(country_summary, options = list(pageLength = 5), rownames = FALSE)
+      combined_data <- rbind(combined_data, city_data)
     }
+    
+    if (!is.null(input$comparators_Urban) && length(input$comparators_Urban) > 0) {
+      comparators_data <- urbanDatacomparators() 
+      combined_data <- rbind(combined_data, comparators_data)
+    }
+    
+    if (!is.null(input$aspirational_Urban) && length(input$aspirational_Urban) > 0) {
+      aspirational_data <- urbanDataAspirational() 
+      combined_data <- rbind(combined_data, aspirational_data)
+    }
+    
+    DT::datatable(combined_data, options = list(pageLength = 5), rownames = FALSE)
   })
   
+  
+  # Plot built-up growth for selected cities
   output$urbanPlotCity <- renderPlot({
     city_data <- urbanDataCity()
-    city_value <- unique(city_data$Built_rel_change[!is.na(city_data$Built_rel_change)])
+    comparators_data <- urbanDatacomparators()
+    aspirational_data <- urbanDataAspirational()
     
-    ggplot() +
-      geom_point(aes(x = 1, y = 1, size = city_value), shape = 21, fill = "dodgerblue", alpha = 0.7) +
-      geom_point(aes(x = 1, y = 1), shape = 21, size = 5, fill = "gray80", alpha = 0.4) +  # Unit circle
-      scale_size_continuous(range = c(5, 20)) +
-      labs(title = paste("Built-up Surface Relative Change for", input$urbanCentre),
-           x = NULL, y = NULL) +
-      theme_void() +
-      theme(legend.position = "none")
+    combined_data <- comparators_data %>%
+      bind_rows(city_data) %>%
+      bind_rows(aspirational_data) %>%
+      filter(Urban_centre == input$urbanCentre | Urban_centre %in% input$comparators_Urban | Urban_centre %in% input$aspirational_Urban) %>%
+      arrange(desc(Built_rel_change))
+    
+    # Create color mapping
+    combined_data$city_type <- ifelse(combined_data$Urban_centre == input$urbanCentre, 
+                                      "main",
+                                      ifelse(combined_data$Urban_centre %in% input$comparators_Urban, 
+                                             "comparison", "aspirational"))
+    
+    ggplot(combined_data, aes(x = reorder(Urban_centre, Built_rel_change), y = Built_rel_change)) +
+      geom_bar(stat = "identity", aes(fill = city_type)) +
+      scale_fill_manual(values = c("main" = "#cd402a", "comparison" = "#80E68A", "aspirational" = "#5BC8F0")) +
+      geom_text(
+        aes(label = scales::percent(Built_rel_change, scale = 100, accuracy = 0.1)),
+        position = position_stack(vjust = 0.5),
+        color = "black",
+        fontface = "bold"
+      ) +
+      labs(
+        title = paste("Built-up Surface Relative Change for", input$urbanCentre, "and Comparison Group"),
+        x = "Urban Centre", y = "Built-up Surface Relative Change 2010-2020"
+      ) +
+      theme_minimal() +
+      theme(legend.position = "none",
+            legend.title = element_blank(),
+            plot.title = element_text(size = 10, face = "bold"),
+            legend.text = element_text(size = 8)
+      ) +
+      scale_y_continuous(labels = scales::percent_format())
   })
   
-  output$urbanPlotRegion <- renderPlot({
-    region_data <- urbanDataRegion()
-    region_avg <- mean(region_data$Built_rel_change, na.rm = TRUE)
+  # Plot built-up growth for selected comparators
+  output$urbanPlotcomparators <- renderPlot({
+    comparators_data <- urbanDatacomparators()
+    city_data <- urbanDataCity()
     
-    ggplot() +
-      geom_point(aes(x = 1, y = 1, size = region_avg), shape = 21, fill = "dodgerblue", alpha = 0.7) +
-      geom_point(aes(x = 1, y = 1), shape = 21, size = 5, fill = "gray80", alpha = 0.4) +  # Unit circle
-      scale_size_continuous(range = c(5, 20)) +
-      labs(title = paste("Average Built-up Surface Relative Change in", input$region),
-           x = NULL, y = NULL) +
-      theme_void() +
-      theme(legend.position = "none")
+    combined_data <- comparators_data %>%
+      bind_rows(city_data) %>%
+      filter(Urban_centre == input$urbanCentre | Urban_centre %in% input$comparators_Urban) %>%
+      arrange(desc(Built_rel_change))
+    
+    ggplot(combined_data, aes(x = reorder(Urban_centre, Built_rel_change), y = Built_rel_change)) +
+      geom_bar(stat = "identity", aes(fill = Urban_centre == input$urbanCentre)) +
+      scale_fill_manual(values = c("TRUE" = "#cd402a", "FALSE" = "#80E68A")) +
+      geom_text(
+        aes(label = scales::percent(Built_rel_change, scale = 100, accuracy = 0.1)),
+        position = position_stack(vjust = 0.5),
+        color = "black",
+        fontface = "bold"
+      ) +
+      labs(
+        title = paste("Built-up Surface Relative Change in", input$comparators_Urban, "with", input$urbanCentre),
+        x = "Urban Centre", y = "Built-up Surface Relative Change 2010-2020"
+      ) +
+      theme_minimal() +
+      theme(legend.position = "none",
+            legend.title = element_blank(),
+            plot.title = element_text(size = 10, face = "bold"),
+            legend.text = element_text(size = 8)
+      ) +
+      scale_y_continuous(labels = scales::percent_format())
   })
   
-  output$urbanPlotCountry <- renderPlot({
-    country_data <- urbanDataCountry()
-    country_avg <- mean(country_data$Built_rel_change, na.rm = TRUE)
-    
-    ggplot() +
-      geom_point(aes(x = 1, y = 1, size = country_avg), shape = 21, fill = "dodgerblue", alpha = 0.7) +
-      geom_point(aes(x = 1, y = 1), shape = 21, size = 5, fill = "gray80", alpha = 0.4) +  # Unit circle
-      scale_size_continuous(range = c(5, 20)) +
-      labs(title = paste("Average Built-up Surface Relative Change in", input$country),
-           x = NULL, y = NULL) +
-      theme_void() +
-      theme(legend.position = "none")
-  })
-  
-  observeEvent(input$reset, {
-    updateSelectInput(session, "urbanCentre", selected = "")
-    updateSelectInput(session, "region", selected = "")
-    updateSelectInput(session, "country", selected = "")
-  })
 }
 
-
-
+shinyApp(ui = ui, server = server)
